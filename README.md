@@ -7,8 +7,18 @@ Docker-ready backend pre evidenciu jázd a automatické dopočítanie ciest na k
 ```bash
 cd kniha-jazd-mvp
 cp .env.example .env
-mkdir -p /mnt/disk1/appdata/kniha-jazd-mvp/postgres
-docker compose up --build -d
+mkdir -p /path/to/appdata/kniha-jazd/postgres
+docker compose up -d
+```
+
+V `.env` nastav hlavne:
+
+```env
+POSTGRES_DATA_PATH=/path/to/appdata/kniha-jazd/postgres
+APP_PORT=8014
+POSTGRES_DB=kniha_jazd
+POSTGRES_USER=kniha_user
+POSTGRES_PASSWORD=strong_password_here
 ```
 
 API beží na:
@@ -36,6 +46,7 @@ API beží na:
 - Upload loga aj zo súboru (nielen URL)
 - Import zákazníkov z CSV + mapovanie stĺpcov + dôvody zlyhania po riadkoch
 - Generátor jázd zohľadňuje dátumy tankovania a preferuje pracovné dni
+- Export a import zálohy konfigurácie a všetkých dát (JSON)
 
 ## 3. Odporúčaný postup
 
@@ -65,3 +76,4 @@ V UI vyplníš:
 - Vzdialenosť ku klientovi je momentálne vstupné číslo (`distance_from_base_km`).
 - Ďalší krok: dopojiť online výpočet trás cez Google Maps / OpenRouteService.
 - Produkčne používaj reverzný proxy (Traefik/Nginx) a silné heslá v `.env`.
+- Verejný Docker image: `ghcr.io/meotar14/kniha-jazd-mvp:latest`
