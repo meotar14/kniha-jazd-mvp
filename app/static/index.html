@@ -1,0 +1,1075 @@
+<!doctype html>
+<html lang="sk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kniha jazd</title>
+    <style>
+      :root {
+        --bg: #eef4f8;
+        --card: #ffffff;
+        --ink: #1f2937;
+        --muted: #516175;
+        --line: #d1dbe6;
+        --accent: #0f766e;
+        --accent-2: #115e59;
+        --panel: #f8fbfd;
+        --danger: #b91c1c;
+      }
+      body[data-theme="dark"] {
+        --bg: #0d1520;
+        --card: #121d2b;
+        --ink: #e5edf7;
+        --muted: #9fb0c5;
+        --line: #2a3a51;
+        --accent: #0d9488;
+        --accent-2: #0f766e;
+        --panel: #101a28;
+        --danger: #dc2626;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--ink);
+        font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+        background: radial-gradient(circle at 90% 0%, #dceeea, var(--bg) 50%);
+      }
+      body[data-theme="dark"] {
+        background: radial-gradient(circle at 90% 0%, #142734, var(--bg) 55%);
+      }
+      .wrap { max-width: 1460px; margin: 0 auto; padding: 18px; position: relative; }
+      .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+      .brand { display: flex; align-items: center; gap: 10px; }
+      #company_logo { width: 42px; height: 42px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: #fff; display: none; }
+      h1 { margin: 0; }
+      h2 { margin: 0 0 10px; font-size: 1rem; }
+      .muted { color: var(--muted); font-size: 0.92rem; margin: 0 0 14px; }
+      .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+      .tab-btn {
+        width: auto; margin: 0; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+        font-weight: 700; padding: 8px 14px; border-radius: 999px;
+      }
+      .tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+      .tab-panel { display: none; }
+      .tab-panel.active { display: block; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+      label { display: block; font-size: 0.84rem; color: var(--muted); margin-bottom: 4px; }
+      input, select, button {
+        width: 100%; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line);
+        margin-bottom: 10px; background: var(--card); color: var(--ink);
+      }
+      button { border: 0; color: #fff; background: var(--accent); font-weight: 700; cursor: pointer; }
+      button:hover { background: var(--accent-2); }
+      .btn-small { width: auto; margin: 0; padding: 6px 8px; font-size: 0.78rem; }
+      .btn-danger { background: var(--danger); }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .toolbar { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+      .table-wrap { border: 1px solid var(--line); border-radius: 10px; overflow: auto; background: var(--panel); min-height: 120px; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+      th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 7px 8px; white-space: nowrap; }
+      th { background: color-mix(in oklab, var(--panel) 75%, #fff 25%); position: sticky; top: 0; }
+      .actions { display: flex; gap: 6px; }
+      .actions-col {
+        position: sticky;
+        right: 0;
+        background: var(--panel);
+        z-index: 2;
+      }
+      .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; }
+      .pill.generated { background: #d1fae5; color: #065f46; }
+      .pill.manual { background: #e0e7ff; color: #3730a3; }
+      .output {
+        background: #0b1020; color: #d5e2ff; border-radius: 10px; padding: 12px; min-height: 110px;
+        margin-top: 14px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .footer-brand {
+        position: fixed; right: 12px; bottom: 10px; font-size: 0.78rem; color: var(--muted);
+        background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="topbar">
+        <div class="brand">
+          <img id="company_logo" alt="Logo" />
+          <div>
+            <h1>Kniha jazd</h1>
+            <p id="company_label" class="muted" style="margin:0;">Firemny rezim</p>
+          </div>
+        </div>
+        <button style="width:auto;" onclick="toggleTheme()">Prepnúť tmavý režim</button>
+      </div>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="jazdy" onclick="openTab('jazdy')">Jazdy</button>
+        <button class="tab-btn" data-tab="report" onclick="openTab('report')">Report</button>
+        <button class="tab-btn" data-tab="plany" onclick="openTab('plany')">Plány</button>
+        <button class="tab-btn" data-tab="auta" onclick="openTab('auta')">Autá</button>
+        <button class="tab-btn" data-tab="vodici" onclick="openTab('vodici')">Vodiči</button>
+        <button class="tab-btn" data-tab="zakaznici" onclick="openTab('zakaznici')">Zákazníci</button>
+        <button class="tab-btn" data-tab="nastavenia" onclick="openTab('nastavenia')">Nastavenia</button>
+      </div>
+
+      <section id="tab-jazdy" class="tab-panel active">
+        <div class="grid">
+          <div class="card">
+            <h2>Ručná jazda</h2>
+            <label>Mesačný plán</label><select id="t_mid"></select>
+            <label>Zákazník (voliteľne)</label><select id="t_customer" onchange="onTripCustomerChange()"></select>
+            <div class="row">
+              <div><label>Dátum</label><input id="t_date" placeholder="dd.mm.rrrr" /></div>
+              <div><label>Dátum do (voliteľne)</label><input id="t_date_to" placeholder="dd.mm.rrrr" /></div>
+              <div><label>Vzdialenosť (km)</label><input id="t_dist" type="number" step="0.1" /></div>
+            </div>
+            <label>Štart adresa</label><input id="t_start" />
+            <label>Cieľ adresa</label><input id="t_end" />
+            <label>Účel cesty / poznámka</label><input id="t_note" />
+            <button onclick="createTrip()">Uložiť jazdu</button>
+          </div>
+          <div class="card">
+            <h2>Tankovanie</h2>
+            <label>Vozidlo</label><select id="r_vehicle"></select>
+            <label>Dátum</label><input id="r_date" placeholder="dd.mm.rrrr" />
+            <label>Litre</label><input id="r_liters" type="number" step="0.1" />
+            <label>Cena tankovania (EUR)</label><input id="r_price" type="number" step="0.01" />
+            <label>Mesto tankovania (voliteľné)</label><input id="r_city" />
+            <label><input id="r_foreign" type="checkbox" style="width:auto;" /> Zahraničie</label>
+            <label>Tachometer (voliteľne)</label><input id="r_odo" type="number" />
+            <button onclick="createRefuel()">Uložiť tankovanie</button>
+          </div>
+          <div class="card" style="grid-column:1 / -1;">
+            <h2>Zoznam jázd a tankovaní</h2>
+            <div class="toolbar">
+              <select id="trip_filter_plan">
+                <option value="">Všetky plány</option>
+              </select>
+              <input id="trip_filter_year" type="number" placeholder="Rok" />
+              <input id="trip_filter_month" type="number" placeholder="Mesiac" />
+              <select id="trip_filter_mode">
+                <option value="all">Všetky jazdy</option>
+                <option value="manual">Len manuálne</option>
+                <option value="generated">Len generované</option>
+              </select>
+              <button onclick="loadTripsFiltered()">Načítať jazdy</button>
+              <button onclick="downloadFilteredTripsCsv()">Export filtrovaných jázd CSV</button>
+              <button onclick="downloadFilteredTripsXlsx()">Export filtrovaných jázd Excel</button>
+            </div>
+            <div class="toolbar">
+              <select id="trip_column_select"></select>
+              <button onclick="moveTripColumn(-1)">Posun stĺpec vľavo</button>
+              <button onclick="moveTripColumn(1)">Posun stĺpec vpravo</button>
+              <button onclick="toggleTripColumnVisibility()">Skryť/Zobraziť stĺpec</button>
+            </div>
+            <div class="toolbar">
+              <button onclick="bulkDeleteTrips()">Zmazať vybrané jazdy</button>
+              <select id="list_mid_refuels"></select>
+              <button onclick="bulkDeleteRefuels()">Zmazať vybrané tankovania</button>
+              <button onclick="loadRefuelsByMonth()">Načítať tankovania pre plán</button>
+            </div>
+            <div class="table-wrap"><table id="trips_table"></table></div>
+            <div class="table-wrap" style="margin-top:10px;"><table id="refuels_table"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-report" class="tab-panel">
+        <div class="grid">
+          <div class="card">
+            <h2>Generovanie a report</h2>
+            <label>Mesačný plán</label><select id="x_mid"></select>
+            <button onclick="generateMonth()">Generuj jazdy (preferuj pracovné dni)</button>
+            <button onclick="loadReport()">Načítaj report</button>
+            <button onclick="downloadTripsCsv()">Export jázd pre plán CSV</button>
+            <button onclick="downloadTripsXlsx()">Export jázd pre plán Excel</button>
+            <button onclick="downloadMonthPlanFullXlsx()">Export mesačného plánu (jazdy+tankovania)</button>
+            <button onclick="downloadReportCsv()">Export reportu CSV</button>
+            <div id="report_metrics" class="muted"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-plany" class="tab-panel">
+        <div class="grid">
+          <div class="card">
+            <h2>Nový mesačný plán</h2>
+            <label>Vozidlo</label><select id="m_vid"></select>
+            <label>Vodič</label><select id="m_did"></select>
+            <div class="row">
+              <div><label>Rok</label><input id="m_year" type="number" value="2026" /></div>
+              <div><label>Mesiac</label><input id="m_month" type="number" value="3" /></div>
+            </div>
+            <label>Základná adresa</label><input id="m_base" />
+            <div class="row">
+              <div><label>Počiatočné km</label><input id="m_start" type="number" /></div>
+              <div><label>Koncové km</label><input id="m_end" type="number" /></div>
+            </div>
+            <button onclick="createMonthPlan()">Uložiť plán</button>
+          </div>
+          <div class="card">
+            <h2>Zoznam plánov</h2>
+            <div class="toolbar">
+              <input id="plan_filter_year" type="number" placeholder="Rok" />
+              <input id="plan_filter_month" type="number" placeholder="Mesiac (1-12)" />
+              <button onclick="bulkDeletePlans()">Zmazať vybrané</button>
+              <button onclick="loadMonthPlans()">Filtrovať</button>
+            </div>
+            <div class="table-wrap"><table id="plans_table"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-auta" class="tab-panel">
+        <div class="grid">
+          <div class="card">
+            <h2>Nové auto</h2>
+            <label>ŠPZ</label><input id="v_plate" />
+            <label>Model</label><input id="v_model" />
+            <label>Spotreba (l / 100km)</label><input id="v_cons" type="number" step="0.1" />
+            <label>Objem nádrže (l)</label><input id="v_tank" type="number" step="0.1" value="50" />
+            <button onclick="createVehicle()">Uložiť auto</button>
+          </div>
+          <div class="card">
+            <h2>Zoznam áut</h2>
+            <button onclick="loadVehicles()">Obnoviť</button>
+            <button onclick="bulkDeleteVehicles()">Zmazať vybrané</button>
+            <div class="table-wrap"><table id="vehicles_table"></table></div>
+          </div>
+          <div class="card" style="grid-column:1 / -1;">
+            <h2>Priemerná spotreba podľa auta</h2>
+            <button onclick="loadVehicleConsumptionSummary()">Načítať prehľad</button>
+            <div class="table-wrap"><table id="vehicles_consumption_table"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-vodici" class="tab-panel">
+        <div class="grid">
+          <div class="card">
+            <h2>Nový vodič</h2>
+            <label>Meno</label><input id="d_name" />
+            <label>Číslo vodičského</label><input id="d_lic" />
+            <button onclick="createDriver()">Uložiť vodiča</button>
+          </div>
+          <div class="card">
+            <h2>Zoznam vodičov</h2>
+            <button onclick="loadDrivers()">Obnoviť</button>
+            <button onclick="bulkDeleteDrivers()">Zmazať vybrané</button>
+            <div class="table-wrap"><table id="drivers_table"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-zakaznici" class="tab-panel">
+        <div class="grid">
+          <div class="card">
+            <h2>Nový zákazník</h2>
+            <label>Názov</label><input id="c_name" />
+            <label>Adresa</label><input id="c_addr" />
+            <div class="row">
+              <div><label>Vzdialenosť od základne (km)</label><input id="c_dist" type="number" step="0.1" /></div>
+              <div><label>&nbsp;</label><button onclick="estimateCustomerDistance()">Dopočítať km z mapy</button></div>
+            </div>
+            <label><input id="c_active_gen" type="checkbox" style="width:auto;" checked /> Používať pri automatickom generovaní jázd</label>
+            <button onclick="createCustomer()">Uložiť zákazníka</button>
+          </div>
+          <div class="card">
+            <h2>Zoznam zákazníkov</h2>
+            <button onclick="loadCustomers()">Obnoviť</button>
+            <button onclick="bulkDeleteCustomers()">Zmazať vybrané</button>
+            <div class="table-wrap"><table id="customers_table"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-nastavenia" class="tab-panel">
+        <div class="grid">
+          <div class="card">
+            <h2>Firemné nastavenia</h2>
+            <label>Názov spoločnosti</label><input id="s_company_name" />
+            <label>IČO</label><input id="s_company_ico" />
+            <label>Adresa sídla / základne</label><input id="s_company_base" />
+            <label>URL loga spoločnosti</label><input id="s_company_logo" />
+            <button onclick="saveSettings()">Uložiť nastavenia</button>
+            <input id="s_logo_file" type="file" accept=".png,.jpg,.jpeg,.webp,.svg" />
+            <button onclick="uploadLogo()">Nahrať logo zo súboru</button>
+          </div>
+          <div class="card">
+            <h2>Import zákazníkov</h2>
+            <p class="muted">CSV hlavičky: `name`/`nazov`, `address`/`adresa`, voliteľne `distance_from_base_km`.</p>
+            <input id="import_customers_file" type="file" accept=".csv" />
+            <select id="import_name_col"></select>
+            <select id="import_addr_col"></select>
+            <select id="import_dist_col"></select>
+            <button onclick="importCustomersCsv()">Importovať CSV</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="output" id="out">Pripravené.</div>
+      <div class="footer-brand">made by meotar</div>
+    </div>
+
+    <script>
+      const out = document.getElementById("out");
+      let vehiclesCache = [];
+      let driversCache = [];
+      let customersCache = [];
+      let plansCache = [];
+      let tripsCache = [];
+      let refuelsCache = [];
+      let settingsCache = null;
+      const allTripColumns = ["id", "month_name", "trip_date", "trip_end_date", "customer_name", "start_address", "end_address", "distance_km", "generated", "note"];
+      let tripColumnOrder = JSON.parse(localStorage.getItem("tripColumnOrder") || "null") || [...allTripColumns];
+      let hiddenTripColumns = new Set(JSON.parse(localStorage.getItem("hiddenTripColumns") || "[]"));
+      const selectedIds = {
+        vehicles: new Set(),
+        drivers: new Set(),
+        customers: new Set(),
+        plans: new Set(),
+        trips: new Set(),
+        refuels: new Set(),
+      };
+      const tableIdByEntity = {
+        vehicles: "vehicles_table",
+        drivers: "drivers_table",
+        customers: "customers_table",
+        plans: "plans_table",
+        trips: "trips_table",
+        refuels: "refuels_table",
+      };
+      const lastSelectedRowIndex = {
+        vehicles: null,
+        drivers: null,
+        customers: null,
+        plans: null,
+        trips: null,
+        refuels: null,
+      };
+
+      tripColumnOrder = tripColumnOrder.filter(c => allTripColumns.includes(c));
+      allTripColumns.forEach(c => { if (!tripColumnOrder.includes(c)) tripColumnOrder.push(c); });
+      hiddenTripColumns = new Set(Array.from(hiddenTripColumns).filter(c => allTripColumns.includes(c)));
+
+      function openTab(tabName) {
+        document.querySelectorAll(".tab-panel").forEach(el => el.classList.remove("active"));
+        document.querySelectorAll(".tab-btn").forEach(el => el.classList.remove("active"));
+        document.getElementById(`tab-${tabName}`).classList.add("active");
+        document.querySelector(`.tab-btn[data-tab='${tabName}']`).classList.add("active");
+      }
+
+      function applyTheme(theme) {
+        document.body.setAttribute("data-theme", theme === "dark" ? "dark" : "light");
+        localStorage.setItem("theme", theme === "dark" ? "dark" : "light");
+      }
+
+      function toggleTheme() {
+        const current = document.body.getAttribute("data-theme") === "dark" ? "dark" : "light";
+        applyTheme(current === "dark" ? "light" : "dark");
+      }
+
+      function initTheme() {
+        const stored = localStorage.getItem("theme");
+        applyTheme(stored || "light");
+      }
+
+      async function callApi(path, method = "GET", body = null) {
+        const cfg = { method, headers: { "Content-Type": "application/json" } };
+        if (body) cfg.body = JSON.stringify(body);
+        const res = await fetch(path, cfg);
+        const text = await res.text();
+        let payload = text;
+        try { payload = JSON.parse(text); } catch (_) {}
+        if (!res.ok) {
+          if (payload && typeof payload === "object" && payload.detail) {
+            const detail = typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload.detail);
+            throw new Error(`Chyba ${res.status}: ${detail}`);
+          }
+          throw new Error(`Chyba ${res.status}: ${typeof payload === "string" ? payload : JSON.stringify(payload)}`);
+        }
+        return payload;
+      }
+
+      function prettyLog(data) {
+        if (typeof data === "string") return data;
+        if (!data || typeof data !== "object") return String(data);
+        if (data.status) return `Stav služby: ${data.status}`;
+        if (data.generated_trips !== undefined && data.generated_km !== undefined) {
+          return `Generovanie hotové: ${data.generated_trips} jázd, ${data.generated_km} km.`
+            + (data.warning ? ` Upozornenie: ${data.warning}` : "");
+        }
+        if (data.deleted && data.id) return `Záznam #${data.id} bol zmazaný.`;
+        if (data.created !== undefined && data.updated !== undefined && data.failed !== undefined) {
+          return `Import dokončený: vytvorené ${data.created}, aktualizované ${data.updated}, chybné ${data.failed}.`;
+        }
+        if (data.id && data.name) return `Uložené: ${data.name} (ID ${data.id}).`;
+        if (data.id && data.plate_number) return `Uložené vozidlo ${data.plate_number} (ID ${data.id}).`;
+        return JSON.stringify(data, null, 2);
+      }
+
+      function show(data) {
+        out.textContent = prettyLog(data);
+      }
+
+      function formatDateSk(value) {
+        if (!value || typeof value !== "string") return value;
+        const isoMatch = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})/);
+        if (isoMatch) {
+          const [, y, m, d] = isoMatch;
+          return `${d}.${m}.${y}`;
+        }
+        return value;
+      }
+
+      function normalizeDateForApi(input) {
+        if (!input) return input;
+        if (/^\\d{4}-\\d{2}-\\d{2}$/.test(input)) return input;
+        if (/^\\d{2}\\.\\d{2}\\.\\d{4}$/.test(input)) {
+          const [d, m, y] = input.split(".");
+          return `${y}-${m}-${d}`;
+        }
+        if (/^\\d{1,2}\\.\\d{1,2}\\.\\d{4}$/.test(input)) {
+          const [d, m, y] = input.split(".");
+          return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+        }
+        return input;
+      }
+
+      function formatGeneratedPill(value) {
+        const klass = value ? "generated" : "manual";
+        const label = value ? "auto" : "manual";
+        return `<span class="pill ${klass}">${label}</span>`;
+      }
+
+      function tableHtml(columns, rows, actionBuilder = null, entityKey = null) {
+        if (!rows || rows.length === 0) {
+          return "<thead><tr><th>Info</th></tr></thead><tbody><tr><td>Ziadne data</td></tr></tbody>";
+        }
+        const selectHead = entityKey ? "<th>Vyber</th>" : "";
+        const headActions = actionBuilder ? "<th class='actions-col'>Akcie</th>" : "";
+        const thead = `<thead><tr>${selectHead}${columns.map(c => `<th>${c}</th>`).join("")}${headActions}</tr></thead>`;
+        const tbody = `<tbody>${rows.map((r, idx) => {
+          const selected = entityKey && selectedIds[entityKey].has(r.id) ? "checked" : "";
+          const selectCell = entityKey
+            ? `<td><input type='checkbox' style='width:auto;' ${selected} data-entity='${entityKey}' data-id='${r.id}' data-row-index='${idx}' onclick='toggleSelection(\"${entityKey}\", ${r.id}, this.checked, ${idx}, event)' /></td>`
+            : "";
+          const cells = columns.map(c => {
+            if (c === "generated") return `<td>${formatGeneratedPill(r[c])}</td>`;
+            if (c.includes("date")) return `<td>${formatDateSk(r[c]) ?? ""}</td>`;
+            if (typeof r[c] === "string" && /^\\d{4}-\\d{2}-\\d{2}/.test(r[c])) return `<td>${formatDateSk(r[c])}</td>`;
+            if (typeof r[c] === "boolean") return `<td>${r[c] ? "áno" : "nie"}</td>`;
+            return `<td>${r[c] ?? ""}</td>`;
+          }).join("");
+          const actions = actionBuilder ? `<td class='actions-col'><div class=\"actions\">${actionBuilder(r)}</div></td>` : "";
+          return `<tr>${selectCell}${cells}${actions}</tr>`;
+        }).join("")}</tbody>`;
+        return thead + tbody;
+      }
+
+      function saveTripColumnPrefs() {
+        localStorage.setItem("tripColumnOrder", JSON.stringify(tripColumnOrder));
+        localStorage.setItem("hiddenTripColumns", JSON.stringify(Array.from(hiddenTripColumns)));
+      }
+
+      function visibleTripColumns() {
+        return tripColumnOrder.filter(c => !hiddenTripColumns.has(c));
+      }
+
+      function refreshTripColumnSelector() {
+        trip_column_select.innerHTML = tripColumnOrder.map(c => {
+          const hiddenMark = hiddenTripColumns.has(c) ? " (skryty)" : "";
+          return `<option value=\"${c}\">${c}${hiddenMark}</option>`;
+        }).join("");
+      }
+
+      function moveTripColumn(direction) {
+        const col = trip_column_select.value;
+        if (!col) return;
+        const i = tripColumnOrder.indexOf(col);
+        if (i < 0) return;
+        const j = i + direction;
+        if (j < 0 || j >= tripColumnOrder.length) return;
+        const tmp = tripColumnOrder[i];
+        tripColumnOrder[i] = tripColumnOrder[j];
+        tripColumnOrder[j] = tmp;
+        saveTripColumnPrefs();
+        refreshTripColumnSelector();
+        loadTripsFiltered();
+      }
+
+      function toggleTripColumnVisibility() {
+        const col = trip_column_select.value;
+        if (!col) return;
+        if (hiddenTripColumns.has(col)) hiddenTripColumns.delete(col);
+        else hiddenTripColumns.add(col);
+        saveTripColumnPrefs();
+        refreshTripColumnSelector();
+        loadTripsFiltered();
+      }
+
+      function toggleSelection(entityKey, id, checked, rowIndex = null, event = null) {
+        if (!selectedIds[entityKey]) return;
+        const applyChecked = (rowId, isChecked) => {
+          if (isChecked) selectedIds[entityKey].add(rowId);
+          else selectedIds[entityKey].delete(rowId);
+        };
+
+        const previousIndex = lastSelectedRowIndex[entityKey];
+        if (event && event.shiftKey && previousIndex !== null && rowIndex !== null) {
+          const start = Math.min(previousIndex, rowIndex);
+          const end = Math.max(previousIndex, rowIndex);
+          const table = document.getElementById(tableIdByEntity[entityKey]);
+          const checkboxes = Array.from(table.querySelectorAll(`input[type='checkbox'][data-entity='${entityKey}']`));
+          for (let i = start; i <= end; i += 1) {
+            const checkbox = checkboxes[i];
+            if (!checkbox) continue;
+            checkbox.checked = checked;
+            applyChecked(Number(checkbox.getAttribute("data-id")), checked);
+          }
+        } else {
+          applyChecked(id, checked);
+        }
+        if (rowIndex !== null) lastSelectedRowIndex[entityKey] = rowIndex;
+      }
+
+      function render(id, html) {
+        document.getElementById(id).innerHTML = html;
+      }
+
+      function fillSelect(selectId, items, formatter, valueKey = "id", includePlaceholder = true) {
+        const select = document.getElementById(selectId);
+        const currentValue = select.value;
+        const opts = [];
+        if (includePlaceholder) opts.push(`<option value="">-- vyber --</option>`);
+        opts.push(...items.map(item => `<option value="${item[valueKey]}">${formatter(item)}</option>`));
+        select.innerHTML = opts.join("");
+        if (currentValue) select.value = currentValue;
+      }
+
+      function syncSelectors() {
+        fillSelect("m_vid", vehiclesCache, v => `${v.plate_number} | ${v.model}`);
+        fillSelect("r_vehicle", vehiclesCache, v => `${v.plate_number} | ${v.model}`);
+        fillSelect("m_did", driversCache, d => `${d.full_name} | ${d.license_number}`);
+        fillSelect("t_customer", customersCache, c => `${c.name} (${c.distance_from_base_km} km)`, "id", true);
+        const formatPlan = p => `${p.month_name} ${p.year} | ${p.vehicle_plate_number} | ${p.driver_name}`;
+        ["t_mid", "x_mid", "list_mid_refuels"].forEach(id => fillSelect(id, plansCache, formatPlan));
+        fillSelect("trip_filter_plan", plansCache, formatPlan, "id", true);
+        if (trip_filter_plan.options.length) trip_filter_plan.options[0].textContent = "Všetky plány";
+        if (!trip_filter_plan.value) trip_filter_plan.value = "";
+      }
+
+      function applySettingsToHeader() {
+        if (!settingsCache) return;
+        const company = settingsCache.company_name || "Firemný režim";
+        const icoPart = settingsCache.company_ico ? ` | IČO: ${settingsCache.company_ico}` : "";
+        company_label.textContent = `${company}${icoPart}`;
+        if (settingsCache.company_logo_url) {
+          company_logo.src = settingsCache.company_logo_url;
+          company_logo.style.display = "block";
+        } else {
+          company_logo.style.display = "none";
+        }
+      }
+
+      async function loadSettings() {
+        settingsCache = await callApi("/settings");
+        s_company_name.value = settingsCache.company_name || "";
+        s_company_ico.value = settingsCache.company_ico || "";
+        s_company_base.value = settingsCache.company_base_address || "";
+        s_company_logo.value = settingsCache.company_logo_url || "";
+        applySettingsToHeader();
+      }
+
+      async function saveSettings() {
+        try {
+          settingsCache = await callApi("/settings", "PUT", {
+            company_name: s_company_name.value,
+            company_ico: s_company_ico.value,
+            company_base_address: s_company_base.value || null,
+            company_logo_url: s_company_logo.value || null,
+          });
+          applySettingsToHeader();
+          show("Nastavenia uložené");
+        } catch (e) { show(e.message); }
+      }
+
+      async function uploadLogo() {
+        const fileInput = document.getElementById("s_logo_file");
+        if (!fileInput.files || !fileInput.files.length) { show("Vyber logo súbor."); return; }
+        try {
+          const form = new FormData();
+          form.append("file", fileInput.files[0]);
+          const res = await fetch("/settings/logo", { method: "POST", body: form });
+          const payload = await res.json();
+          if (!res.ok) throw new Error(JSON.stringify(payload));
+          settingsCache = payload;
+          s_company_logo.value = settingsCache.company_logo_url || "";
+          applySettingsToHeader();
+          show("Logo nahraté");
+        } catch (e) { show(e.message); }
+      }
+
+      async function estimateCustomerDistance() {
+        try {
+          const baseAddress = (settingsCache && settingsCache.company_base_address) ? settingsCache.company_base_address : s_company_base.value;
+          if (!baseAddress) { show("Najprv vyplň v Nastaveniach adresu sídla/základne."); return; }
+          if (!c_addr.value) { show("Zadaj adresu zákazníka."); return; }
+          const q = `base_address=${encodeURIComponent(baseAddress)}&destination_address=${encodeURIComponent(c_addr.value)}`;
+          const estimate = await callApi(`/distance-estimate?${q}`);
+          c_dist.value = estimate.one_way_km;
+          show(estimate);
+        } catch (e) { show(e.message); }
+      }
+
+      async function importCustomersCsv() {
+        const fileInput = document.getElementById("import_customers_file");
+        if (!fileInput.files || !fileInput.files.length) { show("Vyber CSV súbor."); return; }
+        try {
+          const form = new FormData();
+          form.append("file", fileInput.files[0]);
+          if (import_name_col.value) form.append("name_column", import_name_col.value);
+          if (import_addr_col.value) form.append("address_column", import_addr_col.value);
+          if (import_dist_col.value) form.append("distance_column", import_dist_col.value);
+          const res = await fetch("/customers/import-csv", { method: "POST", body: form });
+          const payload = await res.json();
+          if (!res.ok) throw new Error(JSON.stringify(payload));
+          show(payload);
+          await loadCustomers();
+        } catch (e) { show(e.message); }
+      }
+
+      document.getElementById("import_customers_file").addEventListener("change", async (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        const text = await file.text();
+        const first = text.split(/\\r?\\n/)[0] || "";
+        const delimiter = (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ";" : ",";
+        const cols = first.split(delimiter).map(c => c.trim().replace(/^\\uFEFF/, ""));
+        const options = ["<option value=''>-- auto-detekcia --</option>"]
+          .concat(cols.map(c => `<option value=\"${c}\">${c}</option>`))
+          .join("");
+        import_name_col.innerHTML = options;
+        import_addr_col.innerHTML = options;
+        import_dist_col.innerHTML = options;
+      });
+
+      function onTripCustomerChange() {
+        const customer = customersCache.find(c => c.id === Number(t_customer.value));
+        if (!customer) return;
+        t_end.value = customer.address;
+        if (!t_dist.value) t_dist.value = Number(customer.distance_from_base_km * 2).toFixed(1);
+      }
+
+      async function loadVehicles() {
+        vehiclesCache = await callApi("/vehicles");
+        render("vehicles_table", tableHtml(
+          ["id", "plate_number", "model", "expected_consumption_l_per_100km", "tank_capacity_l"],
+          vehiclesCache,
+          r => `<button class='btn-small' onclick='editVehicle(${r.id})'>Upraviť</button><button class='btn-small btn-danger' onclick='deleteVehicle(${r.id})'>Zmazať</button>`,
+          "vehicles"
+        ));
+        syncSelectors();
+      }
+
+      async function loadDrivers() {
+        driversCache = await callApi("/drivers");
+        render("drivers_table", tableHtml(["id", "full_name", "license_number"], driversCache,
+          r => `<button class='btn-small' onclick='editDriver(${r.id})'>Upraviť</button><button class='btn-small btn-danger' onclick='deleteDriver(${r.id})'>Zmazať</button>`,
+          "drivers"
+        ));
+        syncSelectors();
+      }
+
+      async function loadCustomers() {
+        customersCache = await callApi("/customers");
+        render("customers_table", tableHtml(["id", "name", "address", "distance_from_base_km", "active_for_generation"], customersCache,
+          r => `<button class='btn-small' onclick='editCustomer(${r.id})'>Upraviť</button><button class='btn-small btn-danger' onclick='deleteCustomer(${r.id})'>Zmazať</button>`,
+          "customers"
+        ));
+        syncSelectors();
+      }
+
+      async function loadVehicleConsumptionSummary() {
+        const summary = await callApi("/vehicles/consumption-summary");
+        render(
+          "vehicles_consumption_table",
+          tableHtml(
+            ["vehicle_id", "plate_number", "model", "plans_count", "total_km", "total_refueled_l", "average_consumption_l_per_100km"],
+            summary
+          )
+        );
+      }
+
+      async function loadMonthPlans() {
+        const year = plan_filter_year.value ? `year=${encodeURIComponent(plan_filter_year.value)}&` : "";
+        const month = plan_filter_month.value ? `month=${encodeURIComponent(plan_filter_month.value)}&` : "";
+        plansCache = await callApi(`/month-plans?${year}${month}`);
+        render("plans_table", tableHtml(
+          ["id", "year", "month_name", "vehicle_plate_number", "driver_name", "month_km", "base_address", "start_odometer_km", "end_odometer_km"],
+          plansCache,
+          r => `<button class='btn-small' onclick='editPlan(${r.id})'>Upraviť</button><button class='btn-small btn-danger' onclick='deletePlan(${r.id})'>Zmazať</button>`,
+          "plans"
+        ));
+        syncSelectors();
+      }
+
+      function buildTripsQuery() {
+        const params = [];
+        const selectedPlan = trip_filter_plan.value;
+        if (selectedPlan) {
+          params.push(`month_plan_id=${encodeURIComponent(selectedPlan)}`);
+        } else {
+          if (trip_filter_year.value) params.push(`year=${encodeURIComponent(trip_filter_year.value)}`);
+          if (trip_filter_month.value) params.push(`month=${encodeURIComponent(trip_filter_month.value)}`);
+        }
+        params.push(`mode=${encodeURIComponent(trip_filter_mode.value)}`);
+        return params.join("&");
+      }
+
+      async function loadTripsFiltered() {
+        tripsCache = await callApi(`/trips?${buildTripsQuery()}`);
+        render("trips_table", tableHtml(
+          visibleTripColumns(),
+          tripsCache,
+          r => `<button class='btn-small' onclick='editTrip(${r.id})'>Upraviť</button><button class='btn-small btn-danger' onclick='deleteTrip(${r.id})'>Zmazať</button>`,
+          "trips"
+        ));
+      }
+
+      async function loadRefuelsByMonth() {
+        const planId = Number(list_mid_refuels.value || x_mid.value || 0);
+        if (!planId) { show("Vyber mesačný plán pre tankovania"); return; }
+        refuelsCache = await callApi(`/month-plans/${planId}/refuels`);
+        render("refuels_table", tableHtml(["id", "month_plan_id", "refuel_date", "liters", "total_price_eur", "location_city", "is_foreign", "odometer_km"], refuelsCache,
+          r => `<button class='btn-small' onclick='editRefuel(${r.id})'>Upraviť</button><button class='btn-small btn-danger' onclick='deleteRefuel(${r.id})'>Zmazať</button>`,
+          "refuels"
+        ));
+      }
+
+      async function createVehicle() {
+        try {
+          const result = await callApi("/vehicles", "POST", {
+            plate_number: v_plate.value,
+            model: v_model.value,
+            expected_consumption_l_per_100km: Number(v_cons.value),
+            tank_capacity_l: Number(v_tank.value),
+          });
+          show(result);
+          await loadVehicles();
+        } catch (e) { show(e.message); }
+      }
+
+      async function createDriver() {
+        try {
+          const result = await callApi("/drivers", "POST", { full_name: d_name.value, license_number: d_lic.value });
+          show(result);
+          await loadDrivers();
+        } catch (e) { show(e.message); }
+      }
+
+      async function createCustomer() {
+        try {
+          const result = await callApi("/customers", "POST", {
+            name: c_name.value,
+            address: c_addr.value,
+            distance_from_base_km: Number(c_dist.value),
+            active_for_generation: Boolean(c_active_gen.checked),
+          });
+          show(result);
+          await loadCustomers();
+        } catch (e) { show(e.message); }
+      }
+
+      async function createMonthPlan() {
+        try {
+          const result = await callApi("/month-plans", "POST", {
+            vehicle_id: Number(m_vid.value),
+            driver_id: Number(m_did.value),
+            year: Number(m_year.value),
+            month: Number(m_month.value),
+            base_address: m_base.value,
+            start_odometer_km: Number(m_start.value),
+            end_odometer_km: Number(m_end.value),
+          });
+          show(result);
+          await loadMonthPlans();
+          x_mid.value = String(result.id);
+          t_mid.value = String(result.id);
+          list_mid_refuels.value = String(result.id);
+        } catch (e) { show(e.message); }
+      }
+
+      async function createTrip() {
+        try {
+          const planId = Number(t_mid.value || x_mid.value || 0);
+          const tripDate = normalizeDateForApi(t_date.value);
+          const tripEndDate = t_date_to.value ? normalizeDateForApi(t_date_to.value) : null;
+          if (!tripDate) { show("Zadaj dátum jazdy vo formáte dd.mm.rrrr."); return; }
+          const customerId = t_customer.value ? Number(t_customer.value) : null;
+          const result = await callApi("/trips", "POST", {
+            month_plan_id: planId,
+            trip_date: tripDate,
+            trip_end_date: tripEndDate,
+            customer_id: customerId,
+            start_address: t_start.value,
+            end_address: t_end.value,
+            distance_km: Number(t_dist.value),
+            note: t_note.value || null,
+          });
+          show(result);
+          await loadTripsFiltered();
+        } catch (e) { show(e.message); }
+      }
+
+      async function createRefuel() {
+        try {
+          const odometer = r_odo.value ? Number(r_odo.value) : null;
+          const vehicleId = Number(r_vehicle.value || 0);
+          const refuelDate = normalizeDateForApi(r_date.value);
+          if (!refuelDate) { show("Zadaj dátum tankovania vo formáte dd.mm.rrrr."); return; }
+          const result = await callApi("/refuels", "POST", {
+            vehicle_id: vehicleId,
+            refuel_date: refuelDate,
+            liters: Number(r_liters.value),
+            total_price_eur: r_price.value ? Number(r_price.value) : null,
+            location_city: r_city.value || null,
+            is_foreign: Boolean(r_foreign.checked),
+            odometer_km: odometer,
+          });
+          show(result);
+          if (result.month_plan_id) list_mid_refuels.value = String(result.month_plan_id);
+          await loadRefuelsByMonth();
+        } catch (e) { show(e.message); }
+      }
+
+      async function editVehicle(id) {
+        const row = vehiclesCache.find(r => r.id === id);
+        const plate_number = prompt("ŠPZ", row.plate_number); if (plate_number === null) return;
+        const model = prompt("Model", row.model); if (model === null) return;
+        const expected_consumption_l_per_100km = prompt("Spotreba l/100km", row.expected_consumption_l_per_100km); if (expected_consumption_l_per_100km === null) return;
+        const tank_capacity_l = prompt("Objem nádrže (l)", row.tank_capacity_l); if (tank_capacity_l === null) return;
+        try {
+          show(await callApi(`/vehicles/${id}`, "PUT", { plate_number, model, expected_consumption_l_per_100km: Number(expected_consumption_l_per_100km), tank_capacity_l: Number(tank_capacity_l) }));
+          await loadVehicles();
+          await loadMonthPlans();
+        } catch (e) { show(e.message); }
+      }
+
+      async function deleteVehicle(id) {
+        if (!confirm(`Zmazať auto #${id}?`)) return;
+        try { show(await callApi(`/vehicles/${id}`, "DELETE")); await loadVehicles(); await loadMonthPlans(); } catch (e) { show(e.message); }
+      }
+
+      async function bulkDeleteVehicles() {
+        const ids = Array.from(selectedIds.vehicles);
+        if (!ids.length) { show("Vyber aspoň jedno auto."); return; }
+        if (!confirm(`Zmazať ${ids.length} vybraných áut?`)) return;
+        try { show(await callApi("/vehicles/bulk-delete", "POST", { ids })); selectedIds.vehicles.clear(); await loadVehicles(); await loadMonthPlans(); } catch (e) { show(e.message); }
+      }
+
+      async function editDriver(id) {
+        const row = driversCache.find(r => r.id === id);
+        const full_name = prompt("Meno", row.full_name); if (full_name === null) return;
+        const license_number = prompt("Číslo vodičského", row.license_number); if (license_number === null) return;
+        try { show(await callApi(`/drivers/${id}`, "PUT", { full_name, license_number })); await loadDrivers(); await loadMonthPlans(); } catch (e) { show(e.message); }
+      }
+
+      async function deleteDriver(id) {
+        if (!confirm(`Zmazať vodiča #${id}?`)) return;
+        try { show(await callApi(`/drivers/${id}`, "DELETE")); await loadDrivers(); await loadMonthPlans(); } catch (e) { show(e.message); }
+      }
+
+      async function bulkDeleteDrivers() {
+        const ids = Array.from(selectedIds.drivers);
+        if (!ids.length) { show("Vyber aspoň jedného vodiča."); return; }
+        if (!confirm(`Zmazať ${ids.length} vybraných vodičov?`)) return;
+        try { show(await callApi("/drivers/bulk-delete", "POST", { ids })); selectedIds.drivers.clear(); await loadDrivers(); await loadMonthPlans(); } catch (e) { show(e.message); }
+      }
+
+      async function editCustomer(id) {
+        const row = customersCache.find(r => r.id === id);
+        const name = prompt("Názov", row.name); if (name === null) return;
+        const address = prompt("Adresa", row.address); if (address === null) return;
+        const distance_from_base_km = prompt("Vzdialenosť od základne (km)", row.distance_from_base_km); if (distance_from_base_km === null) return;
+        const activeRaw = prompt("Použiť pri automatickom generovaní? (ano/nie)", row.active_for_generation ? "ano" : "nie");
+        if (activeRaw === null) return;
+        const active_for_generation = !["nie", "no", "0", "false"].includes(String(activeRaw).trim().toLowerCase());
+        try { show(await callApi(`/customers/${id}`, "PUT", { name, address, distance_from_base_km: Number(distance_from_base_km), active_for_generation })); await loadCustomers(); await loadTripsFiltered(); } catch (e) { show(e.message); }
+      }
+
+      async function deleteCustomer(id) {
+        if (!confirm(`Zmazať zákazníka #${id}?`)) return;
+        try { show(await callApi(`/customers/${id}`, "DELETE")); await loadCustomers(); await loadTripsFiltered(); } catch (e) { show(e.message); }
+      }
+
+      async function bulkDeleteCustomers() {
+        const ids = Array.from(selectedIds.customers);
+        if (!ids.length) { show("Vyber aspoň jedného zákazníka."); return; }
+        if (!confirm(`Zmazať ${ids.length} vybraných zákazníkov?`)) return;
+        try { show(await callApi("/customers/bulk-delete", "POST", { ids })); selectedIds.customers.clear(); await loadCustomers(); await loadTripsFiltered(); } catch (e) { show(e.message); }
+      }
+
+      async function editPlan(id) {
+        const row = plansCache.find(r => r.id === id);
+        const vehicle_id = prompt("Vehicle ID", row.vehicle_id); if (vehicle_id === null) return;
+        const driver_id = prompt("Driver ID", row.driver_id); if (driver_id === null) return;
+        const year = prompt("Rok", row.year); if (year === null) return;
+        const month = prompt("Mesiac", row.month); if (month === null) return;
+        const base_address = prompt("Základná adresa", row.base_address); if (base_address === null) return;
+        const start_odometer_km = prompt("Počiatočné km", row.start_odometer_km); if (start_odometer_km === null) return;
+        const end_odometer_km = prompt("Koncové km", row.end_odometer_km); if (end_odometer_km === null) return;
+        try {
+          show(await callApi(`/month-plans/${id}`, "PUT", {
+            vehicle_id: Number(vehicle_id), driver_id: Number(driver_id), year: Number(year), month: Number(month), base_address,
+            start_odometer_km: Number(start_odometer_km), end_odometer_km: Number(end_odometer_km),
+          }));
+          await loadMonthPlans();
+          await loadTripsFiltered();
+        } catch (e) { show(e.message); }
+      }
+
+      async function deletePlan(id) {
+        if (!confirm(`Zmazať mesačný plán #${id}? (zmaže aj jazdy a tankovania)`)) return;
+        try { show(await callApi(`/month-plans/${id}`, "DELETE")); await loadMonthPlans(); await loadTripsFiltered(); render("refuels_table", ""); } catch (e) { show(e.message); }
+      }
+
+      async function bulkDeletePlans() {
+        const ids = Array.from(selectedIds.plans);
+        if (!ids.length) { show("Vyber aspoň jeden plán."); return; }
+        if (!confirm(`Zmazať ${ids.length} vybraných plánov?`)) return;
+        try { show(await callApi("/month-plans/bulk-delete", "POST", { ids })); selectedIds.plans.clear(); await loadMonthPlans(); await loadTripsFiltered(); render("refuels_table", ""); } catch (e) { show(e.message); }
+      }
+
+      async function editTrip(id) {
+        const row = tripsCache.find(r => r.id === id);
+        const month_plan_id = prompt("Month plan ID", row.month_plan_id); if (month_plan_id === null) return;
+        const trip_date = prompt("Dátum (DD.MM.RRRR)", formatDateSk(row.trip_date)); if (trip_date === null) return;
+        const trip_end_date = prompt("Dátum do (DD.MM.RRRR, prázdne = bez)", formatDateSk(row.trip_end_date || "")); if (trip_end_date === null) return;
+        const customer_id = prompt("Customer ID (prázdne = bez)", row.customer_id ?? ""); if (customer_id === null) return;
+        const start_address = prompt("Štart adresa", row.start_address); if (start_address === null) return;
+        const end_address = prompt("Cieľ adresa", row.end_address); if (end_address === null) return;
+        const distance_km = prompt("Vzdialenosť km", row.distance_km); if (distance_km === null) return;
+        const note = prompt("Účel / poznámka", row.note ?? ""); if (note === null) return;
+        try {
+          show(await callApi(`/trips/${id}`, "PUT", {
+            month_plan_id: Number(month_plan_id), trip_date: normalizeDateForApi(trip_date), trip_end_date: trip_end_date ? normalizeDateForApi(trip_end_date) : null, customer_id: customer_id ? Number(customer_id) : null,
+            start_address, end_address, distance_km: Number(distance_km), note: note || null,
+          }));
+          await loadTripsFiltered();
+        } catch (e) { show(e.message); }
+      }
+
+      async function deleteTrip(id) {
+        if (!confirm(`Zmazať jazdu #${id}?`)) return;
+        try { show(await callApi(`/trips/${id}`, "DELETE")); await loadTripsFiltered(); } catch (e) { show(e.message); }
+      }
+
+      async function bulkDeleteTrips() {
+        const ids = Array.from(selectedIds.trips);
+        if (!ids.length) { show("Vyber aspoň jednu jazdu."); return; }
+        if (!confirm(`Zmazať ${ids.length} vybraných jázd?`)) return;
+        try { show(await callApi("/trips/bulk-delete", "POST", { ids })); selectedIds.trips.clear(); await loadTripsFiltered(); } catch (e) { show(e.message); }
+      }
+
+      async function editRefuel(id) {
+        const row = refuelsCache.find(r => r.id === id);
+        const month_plan_id = prompt("Month plan ID", row.month_plan_id); if (month_plan_id === null) return;
+        const refuel_date = prompt("Dátum (DD.MM.RRRR)", formatDateSk(row.refuel_date)); if (refuel_date === null) return;
+        const liters = prompt("Litre", row.liters); if (liters === null) return;
+        const total_price_eur = prompt("Cena EUR (prázdne = bez)", row.total_price_eur ?? ""); if (total_price_eur === null) return;
+        const location_city = prompt("Mesto tankovania (prázdne = bez)", row.location_city ?? ""); if (location_city === null) return;
+        const is_foreign = confirm("Je tankovanie zahraničie? (OK = áno, Storno = nie)");
+        const odometer_km = prompt("Tachometer (prázdne = bez)", row.odometer_km ?? ""); if (odometer_km === null) return;
+        try {
+          show(await callApi(`/refuels/${id}`, "PUT", {
+            month_plan_id: Number(month_plan_id), refuel_date: normalizeDateForApi(refuel_date), liters: Number(liters), odometer_km: odometer_km ? Number(odometer_km) : null,
+            total_price_eur: total_price_eur ? Number(total_price_eur) : null,
+            location_city: location_city || null,
+            is_foreign,
+          }));
+          await loadRefuelsByMonth();
+        } catch (e) { show(e.message); }
+      }
+
+      async function deleteRefuel(id) {
+        if (!confirm(`Zmazať tankovanie #${id}?`)) return;
+        try { show(await callApi(`/refuels/${id}`, "DELETE")); await loadRefuelsByMonth(); } catch (e) { show(e.message); }
+      }
+
+      async function bulkDeleteRefuels() {
+        const ids = Array.from(selectedIds.refuels);
+        if (!ids.length) { show("Vyber aspoň jedno tankovanie."); return; }
+        if (!confirm(`Zmazať ${ids.length} vybraných tankovaní?`)) return;
+        try { show(await callApi("/refuels/bulk-delete", "POST", { ids })); selectedIds.refuels.clear(); await loadRefuelsByMonth(); } catch (e) { show(e.message); }
+      }
+
+      async function generateMonth() {
+        try {
+          const id = Number(x_mid.value || 0);
+          if (!id) { show("Vyber mesačný plán pre generovanie"); return; }
+          show(await callApi(`/month-plans/${id}/generate`, "POST"));
+          await loadTripsFiltered();
+        } catch (e) { show(e.message); }
+      }
+
+      async function loadReport() {
+        try {
+          const id = Number(x_mid.value || 0);
+          if (!id) { show("Vyber mesačný plán pre report"); return; }
+          const report = await callApi(`/month-plans/${id}/report`);
+          show(report);
+          report_metrics.textContent = `Priemerná spotreba za mesiac: ${report.average_consumption_l_per_100km ?? "-"} l/100km`;
+        } catch (e) { show(e.message); }
+      }
+
+      function downloadTripsCsv() {
+        const id = Number(x_mid.value || 0);
+        if (!id) { show("Vyber mesačný plán pre export jázd"); return; }
+        const mode = trip_filter_mode.value || "all";
+        window.open(`/month-plans/${id}/trips.csv?mode=${encodeURIComponent(mode)}`, "_blank");
+      }
+
+      function downloadTripsXlsx() {
+        const id = Number(x_mid.value || 0);
+        if (!id) { show("Vyber mesačný plán pre export jázd"); return; }
+        const mode = trip_filter_mode.value || "all";
+        window.open(`/month-plans/${id}/trips.xlsx?mode=${encodeURIComponent(mode)}`, "_blank");
+      }
+
+      function downloadMonthPlanFullXlsx() {
+        const id = Number(x_mid.value || 0);
+        if (!id) { show("Vyber mesačný plán pre export."); return; }
+        window.open(`/month-plans/${id}/full-export.xlsx`, "_blank");
+      }
+
+      function downloadFilteredTripsCsv() {
+        window.open(`/trips.csv?${buildTripsQuery()}`, "_blank");
+      }
+
+      function downloadFilteredTripsXlsx() {
+        window.open(`/trips.xlsx?${buildTripsQuery()}`, "_blank");
+      }
+
+      function downloadReportCsv() {
+        const id = Number(x_mid.value || 0);
+        if (!id) { show("Vyber mesačný plán pre export reportu"); return; }
+        window.open(`/month-plans/${id}/report.csv`, "_blank");
+      }
+
+      async function bootstrap() {
+        try {
+          initTheme();
+          refreshTripColumnSelector();
+          await loadSettings();
+          await Promise.all([loadVehicles(), loadDrivers(), loadCustomers(), loadMonthPlans(), loadVehicleConsumptionSummary()]);
+          await loadTripsFiltered();
+        } catch (e) {
+          show(e.message);
+        }
+      }
+
+      bootstrap();
+    </script>
+  </body>
+</html>
