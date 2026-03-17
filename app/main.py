@@ -1,5 +1,7 @@
 import csv
 from copy import copy
+import json
+from datetime import date, datetime
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Literal
@@ -124,6 +126,239 @@ def assets(filename: str) -> FileResponse:
     if not asset_path.exists():
         raise HTTPException(status_code=404, detail="asset not found")
     return FileResponse(asset_path)
+
+
+def _parse_backup_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if "." in text:
+        day, month, year = text.split(".")
+        return date(int(year), int(month), int(day))
+    return date.fromisoformat(text)
+
+
+def _reset_postgres_sequences(db: Session) -> None:
+    bind = db.get_bind()
+    if not bind or bind.dialect.name != "postgresql":
+        return
+    table_names = ["vehicles", "drivers", "customers", "month_plans", "trips", "refuels"]
+    for table in table_names:
+        db.execute(
+            text(
+                f"""
+                SELECT setval(
+                    pg_get_serial_sequence('{table}', 'id'),
+                    COALESCE((SELECT MAX(id) FROM {table}), 1),
+                    COALESCE((SELECT MAX(id) IS NOT NULL FROM {table}), false)
+                )
+                """
+            )
+        )
+
+
+@app.get("/backup/export")
+def export_backup_json(db: Session = Depends(get_db)) -> Response:
+    settings_row = ensure_settings_row(db)
+    payload = {
+        "app": "kniha-jazd-mvp",
+        "exported_at": datetime.utcnow().isoformat() + "Z",
+        "settings": serialize_settings(settings_row),
+        "vehicles": [
+            {
+                "id": v.id,
+                "plate_number": v.plate_number,
+                "model": v.model,
+                "expected_consumption_l_per_100km": v.expected_consumption_l_per_100km,
+                "tank_capacity_l": v.tank_capacity_l,
+            }
+            for v in db.query(models.Vehicle).order_by(models.Vehicle.id.asc()).all()
+        ],
+        "drivers": [
+            {"id": d.id, "full_name": d.full_name, "license_number": d.license_number}
+            for d in db.query(models.Driver).order_by(models.Driver.id.asc()).all()
+        ],
+        "customers": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "address": c.address,
+                "distance_from_base_km": c.distance_from_base_km,
+                "active_for_generation": c.active_for_generation,
+            }
+            for c in db.query(models.Customer).order_by(models.Customer.id.asc()).all()
+        ],
+        "month_plans": [
+            {
+                "id": p.id,
+                "vehicle_id": p.vehicle_id,
+                "driver_id": p.driver_id,
+                "year": p.year,
+                "month": p.month,
+                "base_address": p.base_address,
+                "start_odometer_km": p.start_odometer_km,
+                "end_odometer_km": p.end_odometer_km,
+            }
+            for p in db.query(models.MonthPlan).order_by(models.MonthPlan.id.asc()).all()
+        ],
+        "trips": [
+            {
+                "id": t.id,
+                "month_plan_id": t.month_plan_id,
+                "trip_date": t.trip_date.isoformat(),
+                "trip_end_date": t.trip_end_date.isoformat() if t.trip_end_date else None,
+                "customer_id": t.customer_id,
+                "start_address": t.start_address,
+                "end_address": t.end_address,
+                "distance_km": t.distance_km,
+                "generated": t.generated,
+                "note": t.note,
+            }
+            for t in db.query(models.Trip).order_by(models.Trip.id.asc()).all()
+        ],
+        "refuels": [
+            {
+                "id": r.id,
+                "month_plan_id": r.month_plan_id,
+                "refuel_date": r.refuel_date.isoformat(),
+                "liters": r.liters,
+                "odometer_km": r.odometer_km,
+                "total_price_eur": r.total_price_eur,
+                "location_city": r.location_city,
+                "is_foreign": r.is_foreign,
+            }
+            for r in db.query(models.Refuel).order_by(models.Refuel.id.asc()).all()
+        ],
+    }
+    backup_name = f"kniha_jazd_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False, indent=2),
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{backup_name}"'},
+    )
+
+
+@app.post("/backup/import")
+async def import_backup_json(
+    file: UploadFile = File(...),
+    replace_existing: bool = Form(True),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not file.filename.lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail="only .json backup files are supported")
+    try:
+        payload = json.loads((await file.read()).decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="invalid backup json") from exc
+
+    required_keys = {"settings", "vehicles", "drivers", "customers", "month_plans", "trips", "refuels"}
+    if not required_keys.issubset(payload.keys()):
+        raise HTTPException(status_code=400, detail="backup json missing required sections")
+    if not replace_existing:
+        raise HTTPException(status_code=400, detail="replace_existing=false is not supported yet")
+
+    try:
+        db.query(models.Refuel).delete()
+        db.query(models.Trip).delete()
+        db.query(models.MonthPlan).delete()
+        db.query(models.Customer).delete()
+        db.query(models.Driver).delete()
+        db.query(models.Vehicle).delete()
+        db.query(models.AppSettings).delete()
+
+        s = payload["settings"] or {}
+        db.add(
+            models.AppSettings(
+                id=1,
+                company_name=(s.get("company_name") or "").strip(),
+                company_ico=(s.get("company_ico") or "").strip(),
+                company_logo_url=s.get("company_logo_url"),
+                company_base_address=s.get("company_base_address"),
+            )
+        )
+
+        for v in payload["vehicles"]:
+            db.add(
+                models.Vehicle(
+                    id=int(v["id"]),
+                    plate_number=v["plate_number"],
+                    model=v["model"],
+                    expected_consumption_l_per_100km=float(v["expected_consumption_l_per_100km"]),
+                    tank_capacity_l=float(v.get("tank_capacity_l", 50)),
+                )
+            )
+        for d in payload["drivers"]:
+            db.add(models.Driver(id=int(d["id"]), full_name=d["full_name"], license_number=d["license_number"]))
+        for c in payload["customers"]:
+            db.add(
+                models.Customer(
+                    id=int(c["id"]),
+                    name=c["name"],
+                    address=c["address"],
+                    distance_from_base_km=float(c["distance_from_base_km"]),
+                    active_for_generation=bool(c.get("active_for_generation", True)),
+                )
+            )
+        for p in payload["month_plans"]:
+            db.add(
+                models.MonthPlan(
+                    id=int(p["id"]),
+                    vehicle_id=int(p["vehicle_id"]),
+                    driver_id=int(p["driver_id"]),
+                    year=int(p["year"]),
+                    month=int(p["month"]),
+                    base_address=p["base_address"],
+                    start_odometer_km=int(p["start_odometer_km"]),
+                    end_odometer_km=int(p["end_odometer_km"]),
+                )
+            )
+        for t in payload["trips"]:
+            db.add(
+                models.Trip(
+                    id=int(t["id"]),
+                    month_plan_id=int(t["month_plan_id"]),
+                    trip_date=_parse_backup_date(t.get("trip_date")),
+                    trip_end_date=_parse_backup_date(t.get("trip_end_date")),
+                    customer_id=int(t["customer_id"]) if t.get("customer_id") is not None else None,
+                    start_address=t["start_address"],
+                    end_address=t["end_address"],
+                    distance_km=float(t["distance_km"]),
+                    generated=bool(t.get("generated", False)),
+                    note=t.get("note"),
+                )
+            )
+        for r in payload["refuels"]:
+            db.add(
+                models.Refuel(
+                    id=int(r["id"]),
+                    month_plan_id=int(r["month_plan_id"]),
+                    refuel_date=_parse_backup_date(r.get("refuel_date")),
+                    liters=float(r["liters"]),
+                    odometer_km=int(r["odometer_km"]) if r.get("odometer_km") is not None else None,
+                    total_price_eur=float(r["total_price_eur"]) if r.get("total_price_eur") is not None else None,
+                    location_city=r.get("location_city"),
+                    is_foreign=bool(r.get("is_foreign", False)),
+                )
+            )
+
+        db.flush()
+        _reset_postgres_sequences(db)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"backup import failed: {exc}") from exc
+
+    return {
+        "imported": True,
+        "vehicles": len(payload["vehicles"]),
+        "drivers": len(payload["drivers"]),
+        "customers": len(payload["customers"]),
+        "month_plans": len(payload["month_plans"]),
+        "trips": len(payload["trips"]),
+        "refuels": len(payload["refuels"]),
+    }
 
 
 def geocode_address(address: str) -> tuple[float, float]:

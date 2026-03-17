@@ -304,6 +304,13 @@
             <select id="import_dist_col"></select>
             <button onclick="importCustomersCsv()">Importovať CSV</button>
           </div>
+          <div class="card">
+            <h2>Záloha a obnova</h2>
+            <button onclick="downloadBackupJson()">Exportovať konfiguráciu + dáta (JSON)</button>
+            <input id="backup_import_file" type="file" accept=".json" />
+            <label><input id="backup_replace" type="checkbox" style="width:auto;" checked /> Pri importe prepísať existujúce dáta</label>
+            <button onclick="importBackupJson()">Importovať zálohu</button>
+          </div>
         </div>
       </section>
 
@@ -395,6 +402,9 @@
         if (typeof data === "string") return data;
         if (!data || typeof data !== "object") return String(data);
         if (data.status) return `Stav služby: ${data.status}`;
+        if (data.imported) {
+          return `Import zálohy hotový: autá ${data.vehicles}, vodiči ${data.drivers}, zákazníci ${data.customers}, plány ${data.month_plans}, jazdy ${data.trips}, tankovania ${data.refuels}.`;
+        }
         if (data.generated_trips !== undefined && data.generated_km !== undefined) {
           return `Generovanie hotové: ${data.generated_trips} jázd, ${data.generated_km} km.`
             + (data.warning ? ` Upozornenie: ${data.warning}` : "");
@@ -607,6 +617,28 @@
           s_company_logo.value = settingsCache.company_logo_url || "";
           applySettingsToHeader();
           show("Logo nahraté");
+        } catch (e) { show(e.message); }
+      }
+
+      function downloadBackupJson() {
+        window.open("/backup/export", "_blank");
+      }
+
+      async function importBackupJson() {
+        const fileInput = document.getElementById("backup_import_file");
+        if (!fileInput.files || !fileInput.files.length) { show("Vyber JSON zálohu."); return; }
+        if (!confirm("Import zálohy prepíše aktuálne dáta. Pokračovať?")) return;
+        try {
+          const form = new FormData();
+          form.append("file", fileInput.files[0]);
+          form.append("replace_existing", backup_replace.checked ? "true" : "false");
+          const res = await fetch("/backup/import", { method: "POST", body: form });
+          const payload = await res.json();
+          if (!res.ok) throw new Error(payload.detail ? `Chyba ${res.status}: ${payload.detail}` : JSON.stringify(payload));
+          show(payload);
+          await Promise.all([loadSettings(), loadVehicles(), loadDrivers(), loadCustomers(), loadMonthPlans(), loadVehicleConsumptionSummary()]);
+          await loadTripsFiltered();
+          await loadRefuelsByMonth().catch(() => {});
         } catch (e) { show(e.message); }
       }
 
