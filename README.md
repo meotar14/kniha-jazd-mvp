@@ -77,3 +77,7 @@ V UI vyplníš:
 - Ďalší krok: dopojiť online výpočet trás cez Google Maps / OpenRouteService.
 - Produkčne používaj reverzný proxy (Traefik/Nginx) a silné heslá v `.env`.
 - Verejný Docker image: `ghcr.io/meotar14/kniha-jazd-mvp:latest`
+
+## 6. Dokumentácia
+
+- Detailný prehľad funkcionalít, exportov a väzieb na tankovanie: [`docs/FUNKCIONALITY.md`](docs/FUNKCIONALITY.md)
