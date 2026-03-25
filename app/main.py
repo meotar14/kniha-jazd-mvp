@@ -1032,6 +1032,8 @@ def create_month_plan(payload: schemas.MonthPlanCreate, db: Session = Depends(ge
 def list_month_plans(
     year: int | None = None,
     month: int | None = None,
+    vehicle_id: int | None = None,
+    driver_id: int | None = None,
     db: Session = Depends(get_db),
 ) -> list[dict]:
     query = db.query(models.MonthPlan).options(
@@ -1043,6 +1045,10 @@ def list_month_plans(
         query = query.filter(models.MonthPlan.year == year)
     if month is not None:
         query = query.filter(models.MonthPlan.month == month)
+    if vehicle_id is not None:
+        query = query.filter(models.MonthPlan.vehicle_id == vehicle_id)
+    if driver_id is not None:
+        query = query.filter(models.MonthPlan.driver_id == driver_id)
     rows = query.order_by(models.MonthPlan.id.desc()).all()
     return [serialize_month_plan(r) for r in rows]
 
@@ -1212,6 +1218,8 @@ def list_all_trips(
     month_plan_id: int | None = None,
     year: int | None = None,
     month: int | None = None,
+    vehicle_id: int | None = None,
+    driver_id: int | None = None,
     mode: Literal["all", "manual", "generated"] = "all",
     db: Session = Depends(get_db),
 ) -> list[dict]:
@@ -1226,6 +1234,10 @@ def list_all_trips(
         query = query.filter(models.MonthPlan.year == year)
     if month is not None:
         query = query.filter(models.MonthPlan.month == month)
+    if vehicle_id is not None:
+        query = query.filter(models.MonthPlan.vehicle_id == vehicle_id)
+    if driver_id is not None:
+        query = query.filter(models.MonthPlan.driver_id == driver_id)
     if mode == "manual":
         query = query.filter(models.Trip.generated.is_(False))
     elif mode == "generated":
@@ -1515,6 +1527,8 @@ def query_filtered_trips_for_export(
     month_plan_id: int | None = None,
     year: int | None = None,
     month: int | None = None,
+    vehicle_id: int | None = None,
+    driver_id: int | None = None,
     mode: Literal["all", "manual", "generated"] = "all",
     db: Session | None = None,
 ) -> list[models.Trip]:
@@ -1535,6 +1549,10 @@ def query_filtered_trips_for_export(
         query = query.filter(models.MonthPlan.year == year)
     if month is not None:
         query = query.filter(models.MonthPlan.month == month)
+    if vehicle_id is not None:
+        query = query.filter(models.MonthPlan.vehicle_id == vehicle_id)
+    if driver_id is not None:
+        query = query.filter(models.MonthPlan.driver_id == driver_id)
     if mode == "manual":
         query = query.filter(models.Trip.generated.is_(False))
     elif mode == "generated":
@@ -1548,10 +1566,20 @@ def export_filtered_trips_csv(
     month_plan_id: int | None = None,
     year: int | None = None,
     month: int | None = None,
+    vehicle_id: int | None = None,
+    driver_id: int | None = None,
     mode: Literal["all", "manual", "generated"] = "all",
     db: Session = Depends(get_db),
 ) -> Response:
-    trips = query_filtered_trips_for_export(month_plan_id=month_plan_id, year=year, month=month, mode=mode, db=db)
+    trips = query_filtered_trips_for_export(
+        month_plan_id=month_plan_id,
+        year=year,
+        month=month,
+        vehicle_id=vehicle_id,
+        driver_id=driver_id,
+        mode=mode,
+        db=db,
+    )
     export_rows = build_export_rows_for_mixed_trips(trips)
     csv_content = render_trip_export_csv(export_rows)
 
@@ -1571,10 +1599,20 @@ def export_filtered_trips_xlsx(
     month_plan_id: int | None = None,
     year: int | None = None,
     month: int | None = None,
+    vehicle_id: int | None = None,
+    driver_id: int | None = None,
     mode: Literal["all", "manual", "generated"] = "all",
     db: Session = Depends(get_db),
 ) -> Response:
-    trips = query_filtered_trips_for_export(month_plan_id=month_plan_id, year=year, month=month, mode=mode, db=db)
+    trips = query_filtered_trips_for_export(
+        month_plan_id=month_plan_id,
+        year=year,
+        month=month,
+        vehicle_id=vehicle_id,
+        driver_id=driver_id,
+        mode=mode,
+        db=db,
+    )
     export_rows = build_export_rows_for_mixed_trips(trips)
     xlsx_content = render_trip_export_xlsx(export_rows)
 

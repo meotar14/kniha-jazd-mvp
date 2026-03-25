@@ -163,6 +163,8 @@
               <select id="trip_filter_plan">
                 <option value="">Všetky plány</option>
               </select>
+              <select id="trip_filter_vehicle"></select>
+              <select id="trip_filter_driver"></select>
               <input id="trip_filter_year" type="number" placeholder="Rok" />
               <input id="trip_filter_month" type="number" placeholder="Mesiac" />
               <select id="trip_filter_mode">
@@ -230,6 +232,8 @@
           <div class="card">
             <h2>Zoznam plánov</h2>
             <div class="toolbar">
+              <select id="plan_filter_vehicle"></select>
+              <select id="plan_filter_driver"></select>
               <input id="plan_filter_year" type="number" placeholder="Rok" />
               <input id="plan_filter_month" type="number" placeholder="Mesiac (1-12)" />
               <button onclick="bulkDeletePlans()">Zmazať vybrané</button>
@@ -628,14 +632,22 @@
       function syncSelectors() {
         fillSelect("m_vid", vehiclesCache, v => `${v.plate_number} | ${v.model}`);
         fillSelect("r_vehicle", vehiclesCache, v => `${v.plate_number} | ${v.model}`);
+        fillSelect("plan_filter_vehicle", vehiclesCache, v => `${v.plate_number} | ${v.model}`);
+        fillSelect("trip_filter_vehicle", vehiclesCache, v => `${v.plate_number} | ${v.model}`);
         fillSelect("m_did", driversCache, d => `${d.full_name} | ${d.license_number}`);
         fillSelect("v_default_driver", driversCache, d => `${d.full_name} | ${d.license_number}`);
+        fillSelect("plan_filter_driver", driversCache, d => `${d.full_name} | ${d.license_number}`);
+        fillSelect("trip_filter_driver", driversCache, d => `${d.full_name} | ${d.license_number}`);
         fillSelect("t_customer", customersCache, c => `${c.name} (${c.distance_from_base_km} km)`, "id", true);
         const formatPlan = p => `${p.month_name} ${p.year} | ${p.vehicle_plate_number} | ${p.driver_name}`;
         ["t_mid", "x_mid", "list_mid_refuels"].forEach(id => fillSelect(id, plansCache, formatPlan));
         fillSelect("trip_filter_plan", plansCache, formatPlan, "id", true);
         if (trip_filter_plan.options.length) trip_filter_plan.options[0].textContent = "Všetky plány";
         if (!trip_filter_plan.value) trip_filter_plan.value = "";
+        if (plan_filter_vehicle.options.length) plan_filter_vehicle.options[0].textContent = "Všetky autá";
+        if (plan_filter_driver.options.length) plan_filter_driver.options[0].textContent = "Všetci vodiči";
+        if (trip_filter_vehicle.options.length) trip_filter_vehicle.options[0].textContent = "Všetky autá";
+        if (trip_filter_driver.options.length) trip_filter_driver.options[0].textContent = "Všetci vodiči";
         syncGenerateOptionsFromPlan();
         applyDefaultDriverForSelectedVehicle();
       }
@@ -834,7 +846,9 @@
       async function loadMonthPlans() {
         const year = plan_filter_year.value ? `year=${encodeURIComponent(plan_filter_year.value)}&` : "";
         const month = plan_filter_month.value ? `month=${encodeURIComponent(plan_filter_month.value)}&` : "";
-        plansCache = await callApi(`/month-plans?${year}${month}`);
+        const vehicle = plan_filter_vehicle.value ? `vehicle_id=${encodeURIComponent(plan_filter_vehicle.value)}&` : "";
+        const driver = plan_filter_driver.value ? `driver_id=${encodeURIComponent(plan_filter_driver.value)}&` : "";
+        plansCache = await callApi(`/month-plans?${year}${month}${vehicle}${driver}`);
         render("plans_table", tableHtml(
           ["id", "year", "month_name", "vehicle_plate_number", "driver_name", "month_km", "base_address", "start_odometer_km", "end_odometer_km"],
           plansCache,
@@ -852,6 +866,8 @@
         } else {
           if (trip_filter_year.value) params.push(`year=${encodeURIComponent(trip_filter_year.value)}`);
           if (trip_filter_month.value) params.push(`month=${encodeURIComponent(trip_filter_month.value)}`);
+          if (trip_filter_vehicle.value) params.push(`vehicle_id=${encodeURIComponent(trip_filter_vehicle.value)}`);
+          if (trip_filter_driver.value) params.push(`driver_id=${encodeURIComponent(trip_filter_driver.value)}`);
         }
         params.push(`mode=${encodeURIComponent(trip_filter_mode.value)}`);
         return params.join("&");

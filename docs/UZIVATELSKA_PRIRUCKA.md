@@ -133,7 +133,20 @@ Tlačidlo `Načítaj report` zobrazí:
 ### Export Filtrovaných Jázd
 - exportuje len to, čo je práve vyfiltrované v tabuľke
 
-## 9. Editácia Záznamov
+## 9. Filtrovanie
+
+V zoznamoch `Plány` a `Jazdy` môžeš filtrovať podľa:
+- auta
+- vodiča
+- roka
+- mesiaca
+
+Pri jazdách môžeš navyše filtrovať:
+- len manuálne jazdy
+- len generované jazdy
+- všetky jazdy
+
+## 10. Editácia Záznamov
 
 Každý záznam je možné upraviť tlačidlom `Upraviť`.
 
@@ -145,7 +158,7 @@ Editácia sa otvára ako plný formulár, kde vidíš všetky polia naraz. To pl
 - jazdy
 - tankovania
 
-## 10. Záloha A Obnova
+## 11. Záloha A Obnova
 
 V záložke `Nastavenia` je sekcia:
 - export zálohy do JSON

@@ -44,7 +44,8 @@ API beží na:
 - Editácia a mazanie záznamov priamo z tabuliek (vozidlá, vodiči, zákazníci, plány, jazdy, tankovania)
 - Editácia všetkých entít cez plný formulár v modálnom okne
 - Výber viacerých riadkov v tabuľkách a hromadné mazanie
-- Filter jázd podľa roka/mesiaca a export len manuálnych alebo len generovaných jázd
+- Filter plánov a jázd podľa auta, vodiča, roka a mesiaca
+- Export len manuálnych alebo len generovaných jázd
 - Záložka Nastavenia: názov firmy, IČO, logo, adresa sídla/základne
 - Upload loga aj zo súboru (nielen URL)
 - Import zákazníkov z CSV + mapovanie stĺpcov + dôvody zlyhania po riadkoch

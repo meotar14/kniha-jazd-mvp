@@ -48,7 +48,8 @@ Tento dokument popisuje hlavné moduly aplikácie `kniha-jazd-mvp`, rozdiely med
 - tabuľkové zobrazenia s editáciou a mazaním
 - hromadný výber a hromadné mazanie
 - `Shift + klik` výber rozsahu riadkov
-- filtrovanie jázd podľa plánu, mesiaca, roka a typu záznamu
+- filtrovanie plánov podľa auta, vodiča, mesiaca a roka
+- filtrovanie jázd podľa plánu, auta, vodiča, mesiaca, roka a typu záznamu
 - konfigurovateľné stĺpce v zozname jázd
 - ručné jazdy s rozsahom dátumov
 - import zákazníkov z CSV s mapovaním stĺpcov a dôvodmi chýb
