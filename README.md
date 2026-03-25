@@ -41,6 +41,7 @@ API beží na:
 - Export jázd a reportu do CSV + export jázd do Excel (.xlsx)
 - Export mesačného plánu do jedného Excelu (jazdy + tankovania len z vybraného mesiaca)
 - Voliteľné zohľadnenie 10 % súkromných km mimo evidencie jázd
+- Skryté súkromné km sa neexportujú ako samostatné jazdy, ale premietnu sa do medzier tachometra medzi služobnými jazdami
 - Editácia a mazanie záznamov priamo z tabuliek (vozidlá, vodiči, zákazníci, plány, jazdy, tankovania)
 - Editácia všetkých entít cez plný formulár v modálnom okne
 - Výber viacerých riadkov v tabuľkách a hromadné mazanie

@@ -88,6 +88,7 @@ Generovanie jazd funguje nad mesačným plánom a jeho cieľovým nájazdom.
 - pri generovaní je možné zapnúť režim, v ktorom sa 10 % celkového mesačného plánu berie ako súkromné km
 - tieto km sa nezapíšu do zoznamu jázd a neexportujú sa do knihy jázd
 - do plánu sa však započítajú pri kontrole celkového mesačného nájazdu
+- v exportoch sa prejavia ako rozdiel medzi koncom jednej služobnej jazdy a začiatkom ďalšej jazdy v tachometri
 - report preto zobrazuje osobitne:
   evidované služobné km,
   skryté súkromné km,
@@ -144,6 +145,7 @@ Report je určený na kontrolu mesačného plánu.
 - export do excel template knihy jázd
 - používa pripravenú šablónu s mesačnými záložkami
 - pri exporte za konkrétny plán sa vyplnia všetky dostupné mesiace daného auta a roka
+- ak sú zapnuté skryté súkromné km, neobjavia sa ako samostatné riadky, ale ovplyvnia pokračovanie tachometra medzi jazdami
 
 ### Export Mesačného Plánu: Jazdy + Tankovania
 - používa rovnaký ročný excel template knihy jázd

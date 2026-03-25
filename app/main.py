@@ -548,6 +548,40 @@ def format_date_sk(date_iso: str) -> str:
     return f"{parts[2]}.{parts[1]}.{parts[0]}"
 
 
+def distribute_hidden_private_km_across_trips(trips: list[models.Trip], hidden_private_km: float) -> list[float]:
+    if not trips or hidden_private_km <= 0:
+        return [0.0 for _ in trips]
+    total_tenths = max(0, int(round(hidden_private_km * 10)))
+    slots = len(trips)
+    base_units, remainder = divmod(total_tenths, slots)
+    shares: list[float] = []
+    for index in range(slots):
+        units = base_units + (1 if index < remainder else 0)
+        shares.append(round(units / 10.0, 1))
+    return shares
+
+
+def build_trip_odometer_rows(month_plan: models.MonthPlan, trips: list[models.Trip]) -> list[dict]:
+    rows: list[dict] = []
+    hidden_private_km = generator.plan_private_km(month_plan)
+    private_shares = distribute_hidden_private_km_across_trips(trips, hidden_private_km)
+    odometer = float(month_plan.start_odometer_km)
+    for index, trip in enumerate(trips):
+        start_km = round(odometer, 1)
+        end_km = round(start_km + trip.distance_km, 1)
+        private_after_km = private_shares[index] if index < len(private_shares) else 0.0
+        odometer = round(end_km + private_after_km, 1)
+        rows.append(
+            {
+                "trip": trip,
+                "odometer_start_km": start_km,
+                "odometer_end_km": end_km,
+                "private_after_km": private_after_km,
+            }
+        )
+    return rows
+
+
 def render_trip_export_csv(rows: list[dict]) -> str:
     buffer = StringIO()
     writer = csv.writer(buffer)
@@ -669,12 +703,12 @@ def _fill_template_month_sheet(
         for col in range(1, 12):  # A..K
             sheet.cell(row=row_no, column=col).value = None
 
-    odometer = float(month_plan.start_odometer_km)
-    for index, trip in enumerate(trips, start=1):
+    odometer_rows = build_trip_odometer_rows(month_plan, trips)
+    for index, trip_row in enumerate(odometer_rows, start=1):
+        trip = trip_row["trip"]
         row_no = data_start_row + index - 1
-        start_km = round(odometer, 1)
-        end_km = round(start_km + trip.distance_km, 1)
-        odometer = end_km
+        start_km = trip_row["odometer_start_km"]
+        end_km = trip_row["odometer_end_km"]
 
         sheet[f"A{row_no}"] = index
         sheet[f"B{row_no}"] = format_date_sk(trip.trip_date.isoformat())
@@ -689,12 +723,12 @@ def _fill_template_month_sheet(
         sheet[f"K{row_no}"] = trip_purpose_label(trip)
 
     summary_row = summary_base_row + extra_rows
-    total_km = round(sum(t.distance_km for t in trips), 1)
-    final_odometer = round(month_plan.start_odometer_km + total_km, 1)
-    sheet[f"I{summary_row}"] = total_km
+    service_km = round(sum(t.distance_km for t in trips), 1)
+    final_odometer = float(month_plan.end_odometer_km)
+    sheet[f"I{summary_row}"] = service_km
     sheet[f"D{summary_row + 1}"] = month_plan.start_odometer_km
     sheet[f"D{summary_row + 2}"] = final_odometer
-    sheet[f"D{summary_row + 3}"] = total_km
+    sheet[f"D{summary_row + 3}"] = round(final_odometer - month_plan.start_odometer_km, 1)
 
 
 def render_template_trip_export_xlsx(
@@ -716,18 +750,15 @@ def render_template_trip_export_xlsx(
 
 def build_export_rows_for_month_plan(month_plan: models.MonthPlan, trips: list[models.Trip]) -> list[dict]:
     rows: list[dict] = []
-    odometer = float(month_plan.start_odometer_km)
-    for trip in trips:
-        start_km = round(odometer, 1)
-        end_km = round(start_km + trip.distance_km, 1)
-        odometer = end_km
+    for trip_row in build_trip_odometer_rows(month_plan, trips):
+        trip = trip_row["trip"]
         rows.append(
             {
                 "driver_name": month_plan.driver.full_name,
                 "plate_number": month_plan.vehicle.plate_number,
                 "trip_date": format_date_sk(trip.trip_date.isoformat()),
-                "odometer_start_km": start_km,
-                "odometer_end_km": end_km,
+                "odometer_start_km": trip_row["odometer_start_km"],
+                "odometer_end_km": trip_row["odometer_end_km"],
                 "purpose": trip_purpose_label(trip),
                 "start_address": trip.start_address,
                 "end_address": trip.end_address,
@@ -739,27 +770,26 @@ def build_export_rows_for_month_plan(month_plan: models.MonthPlan, trips: list[m
 
 def build_export_rows_for_mixed_trips(trips: list[models.Trip]) -> list[dict]:
     rows: list[dict] = []
-    odometer_by_plan: dict[int, float] = {}
+    trips_by_plan: dict[int, list[models.Trip]] = {}
     for trip in trips:
-        plan_id = trip.month_plan_id
-        month_plan = trip.month_plan
-        current_odo = odometer_by_plan.get(plan_id, float(month_plan.start_odometer_km))
-        start_km = round(current_odo, 1)
-        end_km = round(start_km + trip.distance_km, 1)
-        odometer_by_plan[plan_id] = end_km
-        rows.append(
-            {
-                "driver_name": month_plan.driver.full_name,
-                "plate_number": month_plan.vehicle.plate_number,
-                "trip_date": format_date_sk(trip.trip_date.isoformat()),
-                "odometer_start_km": start_km,
-                "odometer_end_km": end_km,
-                "purpose": trip_purpose_label(trip),
-                "start_address": trip.start_address,
-                "end_address": trip.end_address,
-                "distance_km": trip.distance_km,
-            }
-        )
+        trips_by_plan.setdefault(trip.month_plan_id, []).append(trip)
+    for plan_id, grouped_trips in trips_by_plan.items():
+        month_plan = grouped_trips[0].month_plan
+        for trip_row in build_trip_odometer_rows(month_plan, grouped_trips):
+            trip = trip_row["trip"]
+            rows.append(
+                {
+                    "driver_name": month_plan.driver.full_name,
+                    "plate_number": month_plan.vehicle.plate_number,
+                    "trip_date": format_date_sk(trip.trip_date.isoformat()),
+                    "odometer_start_km": trip_row["odometer_start_km"],
+                    "odometer_end_km": trip_row["odometer_end_km"],
+                    "purpose": trip_purpose_label(trip),
+                    "start_address": trip.start_address,
+                    "end_address": trip.end_address,
+                    "distance_km": trip.distance_km,
+                }
+            )
     return rows
 
 

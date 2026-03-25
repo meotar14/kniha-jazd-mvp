@@ -451,7 +451,7 @@
         if (data.generated_trips !== undefined && data.generated_km !== undefined) {
           return `Generovanie hotové: ${data.generated_trips} jázd, ${data.generated_km} služobných km.`
             + ` Evidované služobné km: ${data.recorded_service_km}.`
-            + ` Skryté súkromné km: ${data.hidden_private_km}.`
+            + ` Skryté súkromné km v tachometri medzi jazdami: ${data.hidden_private_km}.`
             + ` Spolu do plánu: ${data.total_km_including_private}/${data.target_km} km.`
             + (data.warning ? ` Upozornenie: ${data.warning}` : "");
         }

@@ -57,6 +57,7 @@ Voliteľne môžeš zapnúť:
 Tento režim znamená:
 - 10 % z mesačného nájazdu sa nebude evidovať v zozname jázd
 - tieto km však budú započítané do celkového mesačného plánu
+- v exporte sa neukážu ako nové riadky, ale prejavia sa v stave tachometra medzi služobnými jazdami
 
 ## 4. Tankovania
 
