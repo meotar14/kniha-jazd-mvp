@@ -1259,15 +1259,13 @@
       function downloadTripsCsv() {
         const id = Number(x_mid.value || 0);
         if (!id) { show("Vyber mesačný plán pre export jázd"); return; }
-        const mode = trip_filter_mode.value || "all";
-        window.open(`/month-plans/${id}/trips.csv?mode=${encodeURIComponent(mode)}`, "_blank");
+        window.open(`/month-plans/${id}/trips.csv?mode=all`, "_blank");
       }
 
       function downloadTripsXlsx() {
         const id = Number(x_mid.value || 0);
         if (!id) { show("Vyber mesačný plán pre export jázd"); return; }
-        const mode = trip_filter_mode.value || "all";
-        window.open(`/month-plans/${id}/trips.xlsx?mode=${encodeURIComponent(mode)}`, "_blank");
+        window.open(`/month-plans/${id}/trips.xlsx?mode=all`, "_blank");
       }
 
       function downloadMonthPlanFullXlsx() {
