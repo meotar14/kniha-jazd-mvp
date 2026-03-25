@@ -16,8 +16,9 @@ from sqlalchemy.orm import Session, joinedload
 
 from . import generator, models, schemas
 from .db import Base, engine, get_db
+from .version import APP_CONTACTS, APP_VERSION
 
-app = FastAPI(title="Kniha jazd API", version="0.1.0")
+app = FastAPI(title="Kniha jazd API", version=APP_VERSION)
 STATIC_INDEX = Path(__file__).parent / "static" / "index.html"
 TRIPS_TEMPLATE_XLSX = Path(__file__).parent / "templates" / "kniha_jazd_template.xlsx"
 MONTH_NAMES_SK = {
@@ -50,6 +51,12 @@ def run_lightweight_migrations() -> None:
         conn.execute(text("ALTER TABLE customers ADD COLUMN IF NOT EXISTS active_for_generation BOOLEAN DEFAULT TRUE"))
         conn.execute(text("UPDATE customers SET active_for_generation = TRUE WHERE active_for_generation IS NULL"))
         conn.execute(text("ALTER TABLE customers ALTER COLUMN active_for_generation SET NOT NULL"))
+        conn.execute(text("ALTER TABLE month_plans ADD COLUMN IF NOT EXISTS private_km_enabled BOOLEAN DEFAULT FALSE"))
+        conn.execute(text("UPDATE month_plans SET private_km_enabled = FALSE WHERE private_km_enabled IS NULL"))
+        conn.execute(text("ALTER TABLE month_plans ALTER COLUMN private_km_enabled SET NOT NULL"))
+        conn.execute(text("ALTER TABLE month_plans ADD COLUMN IF NOT EXISTS private_km_ratio_percent FLOAT DEFAULT 10"))
+        conn.execute(text("UPDATE month_plans SET private_km_ratio_percent = 10 WHERE private_km_ratio_percent IS NULL"))
+        conn.execute(text("ALTER TABLE month_plans ALTER COLUMN private_km_ratio_percent SET NOT NULL"))
 
 
 def ensure_settings_row(db: Session) -> models.AppSettings:
@@ -72,6 +79,11 @@ def on_startup() -> None:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/meta")
+def meta() -> dict:
+    return {"version": APP_VERSION, "contacts": APP_CONTACTS}
 
 
 @app.get("/ui", include_in_schema=False)
@@ -200,6 +212,8 @@ def export_backup_json(db: Session = Depends(get_db)) -> Response:
                 "base_address": p.base_address,
                 "start_odometer_km": p.start_odometer_km,
                 "end_odometer_km": p.end_odometer_km,
+                "private_km_enabled": p.private_km_enabled,
+                "private_km_ratio_percent": p.private_km_ratio_percent,
             }
             for p in db.query(models.MonthPlan).order_by(models.MonthPlan.id.asc()).all()
         ],
@@ -312,6 +326,8 @@ async def import_backup_json(
                     base_address=p["base_address"],
                     start_odometer_km=int(p["start_odometer_km"]),
                     end_odometer_km=int(p["end_odometer_km"]),
+                    private_km_enabled=bool(p.get("private_km_enabled", False)),
+                    private_km_ratio_percent=float(p.get("private_km_ratio_percent", 10.0)),
                 )
             )
         for t in payload["trips"]:
@@ -427,6 +443,8 @@ def serialize_customer(customer: models.Customer) -> dict:
 
 def serialize_month_plan(month_plan: models.MonthPlan) -> dict:
     month_km = round(sum(t.distance_km for t in month_plan.trips), 1)
+    hidden_private_km = generator.plan_private_km(month_plan)
+    service_target_km = generator.plan_service_target_km(month_plan)
     return {
         "id": month_plan.id,
         "vehicle_id": month_plan.vehicle_id,
@@ -441,6 +459,10 @@ def serialize_month_plan(month_plan: models.MonthPlan) -> dict:
         "base_address": month_plan.base_address,
         "start_odometer_km": month_plan.start_odometer_km,
         "end_odometer_km": month_plan.end_odometer_km,
+        "private_km_enabled": month_plan.private_km_enabled,
+        "private_km_ratio_percent": month_plan.private_km_ratio_percent,
+        "hidden_private_km": hidden_private_km,
+        "service_target_km": service_target_km,
     }
 
 
@@ -496,6 +518,8 @@ def serialize_settings(row: models.AppSettings) -> dict:
         "company_ico": row.company_ico,
         "company_logo_url": logo_url,
         "company_base_address": row.company_base_address,
+        "app_version": APP_VERSION,
+        "support_contacts": APP_CONTACTS,
     }
 
 
@@ -1316,16 +1340,28 @@ def bulk_delete_trips(payload: schemas.BulkDeleteRequest, db: Session = Depends(
 
 
 @app.post("/month-plans/{month_plan_id}/generate", response_model=schemas.GenerateResponse)
-def generate_month_trips(month_plan_id: int, db: Session = Depends(get_db)) -> schemas.GenerateResponse:
+def generate_month_trips(
+    month_plan_id: int,
+    payload: schemas.GenerateOptions | None = None,
+    db: Session = Depends(get_db),
+) -> schemas.GenerateResponse:
     month_plan = db.get(models.MonthPlan, month_plan_id)
     if not month_plan:
         raise HTTPException(status_code=404, detail="month plan not found")
+    if payload is not None:
+        month_plan.private_km_enabled = payload.private_km_enabled
+        month_plan.private_km_ratio_percent = payload.private_km_ratio_percent
+        db.commit()
+        db.refresh(month_plan)
 
     generated_trips, generated_km = generator.generate_missing_trips(db, month_plan)
 
     all_trips = db.query(models.Trip).filter(models.Trip.month_plan_id == month_plan_id).all()
     target_km = month_plan.end_odometer_km - month_plan.start_odometer_km
-    total_km = round(sum(t.distance_km for t in all_trips), 1)
+    hidden_private_km = generator.plan_private_km(month_plan)
+    service_target_km = generator.plan_service_target_km(month_plan)
+    recorded_service_km = round(sum(t.distance_km for t in all_trips), 1)
+    total_km = round(recorded_service_km + hidden_private_km, 1)
     total_refueled = round(sum(r.liters for r in month_plan.refuels), 1)
     estimated_fuel = round((target_km * month_plan.vehicle.expected_consumption_l_per_100km) / 100.0, 1)
 
@@ -1341,6 +1377,10 @@ def generate_month_trips(month_plan_id: int, db: Session = Depends(get_db)) -> s
         generated_trips=generated_trips,
         generated_km=generated_km,
         target_km=target_km,
+        service_target_km=service_target_km,
+        hidden_private_km=hidden_private_km,
+        recorded_service_km=recorded_service_km,
+        total_km_including_private=total_km,
         total_trips_after_generation=len(all_trips),
         estimated_fuel_l=estimated_fuel,
         refueled_l=total_refueled,
@@ -1355,8 +1395,11 @@ def get_month_report(month_plan_id: int, db: Session = Depends(get_db)) -> schem
         raise HTTPException(status_code=404, detail="month plan not found")
 
     all_trips = db.query(models.Trip).filter(models.Trip.month_plan_id == month_plan_id).all()
-    total_km = round(sum(t.distance_km for t in all_trips), 1)
+    recorded_service_km = round(sum(t.distance_km for t in all_trips), 1)
     target_km = month_plan.end_odometer_km - month_plan.start_odometer_km
+    hidden_private_km = generator.plan_private_km(month_plan)
+    service_target_km = generator.plan_service_target_km(month_plan)
+    total_km = round(recorded_service_km + hidden_private_km, 1)
     refueled_l = round(sum(r.liters for r in month_plan.refuels), 1)
     estimated_fuel_l = round((target_km * month_plan.vehicle.expected_consumption_l_per_100km) / 100.0, 1)
     avg_consumption = round((refueled_l / total_km) * 100.0, 2) if total_km > 0 else None
@@ -1365,6 +1408,9 @@ def get_month_report(month_plan_id: int, db: Session = Depends(get_db)) -> schem
         month_plan_id=month_plan.id,
         target_km=target_km,
         total_km=total_km,
+        recorded_service_km=recorded_service_km,
+        hidden_private_km=hidden_private_km,
+        service_target_km=service_target_km,
         refueled_l=refueled_l,
         estimated_fuel_l=estimated_fuel_l,
         fuel_difference_l=round(refueled_l - estimated_fuel_l, 1),
@@ -1609,8 +1655,11 @@ def export_report_csv(month_plan_id: int, db: Session = Depends(get_db)) -> Resp
         raise HTTPException(status_code=404, detail="month plan not found")
 
     all_trips = db.query(models.Trip).filter(models.Trip.month_plan_id == month_plan_id).all()
-    total_km = round(sum(t.distance_km for t in all_trips), 1)
+    recorded_service_km = round(sum(t.distance_km for t in all_trips), 1)
     target_km = month_plan.end_odometer_km - month_plan.start_odometer_km
+    hidden_private_km = generator.plan_private_km(month_plan)
+    service_target_km = generator.plan_service_target_km(month_plan)
+    total_km = round(recorded_service_km + hidden_private_km, 1)
     refueled_l = round(sum(r.liters for r in month_plan.refuels), 1)
     estimated_fuel_l = round((target_km * month_plan.vehicle.expected_consumption_l_per_100km) / 100.0, 1)
     average_consumption = round((refueled_l / total_km) * 100.0, 2) if total_km > 0 else ""
@@ -1621,6 +1670,9 @@ def export_report_csv(month_plan_id: int, db: Session = Depends(get_db)) -> Resp
         [
             "month_plan_id",
             "target_km",
+            "service_target_km",
+            "recorded_service_km",
+            "hidden_private_km",
             "total_km",
             "refueled_l",
             "estimated_fuel_l",
@@ -1632,6 +1684,9 @@ def export_report_csv(month_plan_id: int, db: Session = Depends(get_db)) -> Resp
         [
             month_plan.id,
             target_km,
+            service_target_km,
+            recorded_service_km,
+            hidden_private_km,
             total_km,
             refueled_l,
             estimated_fuel_l,

@@ -50,6 +50,8 @@ class MonthPlan(Base):
     base_address: Mapped[str] = mapped_column(String(256), nullable=False)
     start_odometer_km: Mapped[int] = mapped_column(Integer, nullable=False)
     end_odometer_km: Mapped[int] = mapped_column(Integer, nullable=False)
+    private_km_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    private_km_ratio_percent: Mapped[float] = mapped_column(Float, nullable=False, default=10.0)
 
     vehicle: Mapped[Vehicle] = relationship(back_populates="month_plans")
     driver: Mapped[Driver] = relationship(back_populates="month_plans")

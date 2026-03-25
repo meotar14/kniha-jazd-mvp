@@ -39,7 +39,9 @@ API beží na:
 - Mesačný report s porovnaním odhadovanej spotreby a tankovania
 - Export jázd a reportu do CSV + export jázd do Excel (.xlsx)
 - Export mesačného plánu do jedného Excelu (jazdy + tankovania len z vybraného mesiaca)
+- Voliteľné zohľadnenie 10 % súkromných km mimo evidencie jázd
 - Editácia a mazanie záznamov priamo z tabuliek (vozidlá, vodiči, zákazníci, plány, jazdy, tankovania)
+- Editácia všetkých entít cez plný formulár v modálnom okne
 - Výber viacerých riadkov v tabuľkách a hromadné mazanie
 - Filter jázd podľa roka/mesiaca a export len manuálnych alebo len generovaných jázd
 - Záložka Nastavenia: názov firmy, IČO, logo, adresa sídla/základne
@@ -81,3 +83,4 @@ V UI vyplníš:
 ## 6. Dokumentácia
 
 - Detailný prehľad funkcionalít, exportov a väzieb na tankovanie: [`docs/FUNKCIONALITY.md`](docs/FUNKCIONALITY.md)
+- Používateľská príručka: [`docs/UZIVATELSKA_PRIRUCKA.md`](docs/UZIVATELSKA_PRIRUCKA.md)

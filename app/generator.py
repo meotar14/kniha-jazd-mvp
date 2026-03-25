@@ -7,8 +7,21 @@ from sqlalchemy.orm import Session
 from . import models
 
 
+def plan_private_km(month_plan: models.MonthPlan) -> float:
+    target_km = max(0, month_plan.end_odometer_km - month_plan.start_odometer_km)
+    if not month_plan.private_km_enabled:
+        return 0.0
+    ratio = max(0.0, min(float(month_plan.private_km_ratio_percent or 0.0), 90.0))
+    return round(target_km * (ratio / 100.0), 1)
+
+
+def plan_service_target_km(month_plan: models.MonthPlan) -> float:
+    target_km = max(0, month_plan.end_odometer_km - month_plan.start_odometer_km)
+    return round(target_km - plan_private_km(month_plan), 1)
+
+
 def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[int, float]:
-    target_km = month_plan.end_odometer_km - month_plan.start_odometer_km
+    target_km = plan_service_target_km(month_plan)
     existing_km = sum(t.distance_km for t in month_plan.trips)
     remaining = round(target_km - existing_km, 1)
     if remaining <= 0:

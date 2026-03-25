@@ -53,6 +53,8 @@ Tento dokument popisuje hlavné moduly aplikácie `kniha-jazd-mvp`, rozdiely med
 - odhad vzdialenosti zákazníka podľa adresy základne a adresy zákazníka
 - upload loga firmy zo súboru
 - export a import kompletnej zálohy aplikácie vo formáte JSON
+- editácia všetkých entít cez plný formulár v modálnom okne, nie po jednotlivých promptoch
+- zobrazenie release verzie a kontaktných e-mailov priamo v UI
 
 ## Generovanie Jázd
 
@@ -60,6 +62,7 @@ Generovanie jazd funguje nad mesačným plánom a jeho cieľovým nájazdom.
 
 ### Vstupy Pre Generovanie
 - počiatočný a koncový stav km v mesačnom pláne
+- voliteľné zohľadnenie 10 % súkromných km mimo evidencie jázd
 - dostupní zákazníci a ich vzdialenosť od základne
 - ručne zadané jazdy
 - viacdňové ručné jazdy
@@ -77,6 +80,15 @@ Generovanie jazd funguje nad mesačným plánom a jeho cieľovým nájazdom.
 ### Cieľ Generovania
 - vytvoriť realistické jazdy tak, aby sedel mesačný nájazd
 - rozložiť jazdy čo najrovnomernejšie počas mesiaca, ak to situácia dovolí
+
+### Súkromné Km Mimo Evidencie
+- pri generovaní je možné zapnúť režim, v ktorom sa 10 % celkového mesačného plánu berie ako súkromné km
+- tieto km sa nezapíšu do zoznamu jázd a neexportujú sa do knihy jázd
+- do plánu sa však započítajú pri kontrole celkového mesačného nájazdu
+- report preto zobrazuje osobitne:
+  evidované služobné km,
+  skryté súkromné km,
+  celkové km do plánu
 
 ## Tankovanie A Súvislosti
 
@@ -106,6 +118,8 @@ Report je určený na kontrolu mesačného plánu.
 
 ### Report Obsahuje
 - cieľové km podľa plánu
+- cieľové služobné km po odpočítaní skrytých súkromných km
+- skryté súkromné km
 - reálne najazdené km
 - počet jázd
 - natankované litre
@@ -157,7 +171,7 @@ Report je určený na kontrolu mesačného plánu.
 1. Vytvoriť auto a vodiča.
 2. Nastaviť firmu, logo a adresu základne.
 3. Importovať alebo vytvoriť zákazníkov a skontrolovať vzdialenosti.
-4. Vytvoriť mesačný plán.
+4. Vytvoriť mesačný plán a rozhodnúť, či sa má zohľadňovať 10 % súkromných km mimo evidencie.
 5. Zadať reálne tankovania.
 6. Zadať ručné jazdy a viacdňové služobné cesty.
 7. Spustiť generovanie jázd.

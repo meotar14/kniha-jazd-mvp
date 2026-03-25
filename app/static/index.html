@@ -87,6 +87,23 @@
         position: fixed; right: 12px; bottom: 10px; font-size: 0.78rem; color: var(--muted);
         background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px;
       }
+      .footer-brand strong { color: var(--ink); }
+      .mini-meta { font-size: 0.82rem; color: var(--muted); }
+      .inline-check { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; }
+      .inline-check input { width: auto; margin: 0; }
+      .modal {
+        position: fixed; inset: 0; background: rgba(9, 17, 28, 0.55); display: none; align-items: center; justify-content: center;
+        padding: 24px; z-index: 1000;
+      }
+      .modal.open { display: flex; }
+      .modal-card {
+        width: min(760px, 100%); max-height: 88vh; overflow: auto; background: var(--card); border: 1px solid var(--line);
+        border-radius: 16px; padding: 16px;
+      }
+      .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+      .modal-head button { width: auto; margin: 0; }
+      .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+      .modal-actions button { width: auto; margin: 0; }
     </style>
   </head>
   <body>
@@ -97,6 +114,7 @@
           <div>
             <h1>Kniha jazd</h1>
             <p id="company_label" class="muted" style="margin:0;">Firemny rezim</p>
+            <div id="header_meta" class="mini-meta"></div>
           </div>
         </div>
         <button style="width:auto;" onclick="toggleTheme()">Prepnúť tmavý režim</button>
@@ -178,7 +196,8 @@
         <div class="grid">
           <div class="card">
             <h2>Generovanie a report</h2>
-            <label>Mesačný plán</label><select id="x_mid"></select>
+            <label>Mesačný plán</label><select id="x_mid" onchange="syncGenerateOptionsFromPlan()"></select>
+            <label class="inline-check"><input id="x_private_km" type="checkbox" style="width:auto;" /> Pri generovaní započítať 10 % súkromných km mimo evidencie jázd</label>
             <button onclick="generateMonth()">Generuj jazdy (preferuj pracovné dni)</button>
             <button onclick="loadReport()">Načítaj report</button>
             <button onclick="downloadTripsCsv()">Export jázd pre plán CSV</button>
@@ -205,6 +224,7 @@
               <div><label>Počiatočné km</label><input id="m_start" type="number" /></div>
               <div><label>Koncové km</label><input id="m_end" type="number" /></div>
             </div>
+            <label class="inline-check"><input id="m_private_enabled" type="checkbox" style="width:auto;" /> Zohľadniť 10 % súkromných km mimo evidencie jázd</label>
             <button onclick="createMonthPlan()">Uložiť plán</button>
           </div>
           <div class="card">
@@ -287,6 +307,7 @@
         <div class="grid">
           <div class="card">
             <h2>Firemné nastavenia</h2>
+            <p id="settings_release_info" class="muted">Release informácie sa načítavajú.</p>
             <label>Názov spoločnosti</label><input id="s_company_name" />
             <label>IČO</label><input id="s_company_ico" />
             <label>Adresa sídla / základne</label><input id="s_company_base" />
@@ -315,11 +336,27 @@
       </section>
 
       <div class="output" id="out">Pripravené.</div>
-      <div class="footer-brand">made by meotar</div>
+      <div class="footer-brand" id="footer_brand">made by <strong>meotar</strong></div>
+      <div class="modal" id="edit_modal">
+        <div class="modal-card">
+          <div class="modal-head">
+            <h2 id="edit_modal_title">Upraviť</h2>
+            <button class="btn-small btn-danger" onclick="closeFormModal()">Zavrieť</button>
+          </div>
+          <div id="edit_modal_body"></div>
+          <div class="modal-actions">
+            <button class="btn-small" onclick="submitFormModal()">Uložiť zmeny</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script>
       const out = document.getElementById("out");
+      const editModal = document.getElementById("edit_modal");
+      const editModalTitle = document.getElementById("edit_modal_title");
+      const editModalBody = document.getElementById("edit_modal_body");
+      let modalSubmitHandler = null;
       let vehiclesCache = [];
       let driversCache = [];
       let customersCache = [];
@@ -327,6 +364,7 @@
       let tripsCache = [];
       let refuelsCache = [];
       let settingsCache = null;
+      let metaCache = null;
       const allTripColumns = ["id", "month_name", "trip_date", "trip_end_date", "customer_name", "start_address", "end_address", "distance_km", "generated", "note"];
       let tripColumnOrder = JSON.parse(localStorage.getItem("tripColumnOrder") || "null") || [...allTripColumns];
       let hiddenTripColumns = new Set(JSON.parse(localStorage.getItem("hiddenTripColumns") || "[]"));
@@ -406,7 +444,10 @@
           return `Import zálohy hotový: autá ${data.vehicles}, vodiči ${data.drivers}, zákazníci ${data.customers}, plány ${data.month_plans}, jazdy ${data.trips}, tankovania ${data.refuels}.`;
         }
         if (data.generated_trips !== undefined && data.generated_km !== undefined) {
-          return `Generovanie hotové: ${data.generated_trips} jázd, ${data.generated_km} km.`
+          return `Generovanie hotové: ${data.generated_trips} jázd, ${data.generated_km} služobných km.`
+            + ` Evidované služobné km: ${data.recorded_service_km}.`
+            + ` Skryté súkromné km: ${data.hidden_private_km}.`
+            + ` Spolu do plánu: ${data.total_km_including_private}/${data.target_km} km.`
             + (data.warning ? ` Upozornenie: ${data.warning}` : "");
         }
         if (data.deleted && data.id) return `Záznam #${data.id} bol zmazaný.`;
@@ -547,6 +588,32 @@
         document.getElementById(id).innerHTML = html;
       }
 
+      function escapeAttr(value) {
+        return String(value ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/"/g, "&quot;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function openFormModal(title, html, onSubmit) {
+        editModalTitle.textContent = title;
+        editModalBody.innerHTML = html;
+        modalSubmitHandler = onSubmit;
+        editModal.classList.add("open");
+      }
+
+      function closeFormModal() {
+        editModal.classList.remove("open");
+        editModalBody.innerHTML = "";
+        modalSubmitHandler = null;
+      }
+
+      async function submitFormModal() {
+        if (!modalSubmitHandler) return;
+        await modalSubmitHandler();
+      }
+
       function fillSelect(selectId, items, formatter, valueKey = "id", includePlaceholder = true) {
         const select = document.getElementById(selectId);
         const currentValue = select.value;
@@ -567,6 +634,12 @@
         fillSelect("trip_filter_plan", plansCache, formatPlan, "id", true);
         if (trip_filter_plan.options.length) trip_filter_plan.options[0].textContent = "Všetky plány";
         if (!trip_filter_plan.value) trip_filter_plan.value = "";
+        syncGenerateOptionsFromPlan();
+      }
+
+      function syncGenerateOptionsFromPlan() {
+        const selectedPlan = plansCache.find(p => p.id === Number(x_mid.value || 0));
+        x_private_km.checked = Boolean(selectedPlan && selectedPlan.private_km_enabled);
       }
 
       function applySettingsToHeader() {
@@ -580,6 +653,19 @@
         } else {
           company_logo.style.display = "none";
         }
+      }
+
+      function applyMeta() {
+        if (!metaCache) return;
+        const contacts = (metaCache.contacts || []).join(" | ");
+        header_meta.textContent = `Release ${metaCache.version} | ${contacts}`;
+        settings_release_info.textContent = `Release ${metaCache.version} | Kontakt: ${contacts}`;
+        footer_brand.innerHTML = `made by <strong>meotar</strong> | release ${metaCache.version} | ${contacts}`;
+      }
+
+      async function loadMeta() {
+        metaCache = await callApi("/meta");
+        applyMeta();
       }
 
       async function loadSettings() {
@@ -823,12 +909,15 @@
             base_address: m_base.value,
             start_odometer_km: Number(m_start.value),
             end_odometer_km: Number(m_end.value),
+            private_km_enabled: Boolean(m_private_enabled.checked),
+            private_km_ratio_percent: 10.0,
           });
           show(result);
           await loadMonthPlans();
           x_mid.value = String(result.id);
           t_mid.value = String(result.id);
           list_mid_refuels.value = String(result.id);
+          syncGenerateOptionsFromPlan();
         } catch (e) { show(e.message); }
       }
 
@@ -877,15 +966,24 @@
 
       async function editVehicle(id) {
         const row = vehiclesCache.find(r => r.id === id);
-        const plate_number = prompt("ŠPZ", row.plate_number); if (plate_number === null) return;
-        const model = prompt("Model", row.model); if (model === null) return;
-        const expected_consumption_l_per_100km = prompt("Spotreba l/100km", row.expected_consumption_l_per_100km); if (expected_consumption_l_per_100km === null) return;
-        const tank_capacity_l = prompt("Objem nádrže (l)", row.tank_capacity_l); if (tank_capacity_l === null) return;
-        try {
-          show(await callApi(`/vehicles/${id}`, "PUT", { plate_number, model, expected_consumption_l_per_100km: Number(expected_consumption_l_per_100km), tank_capacity_l: Number(tank_capacity_l) }));
-          await loadVehicles();
-          await loadMonthPlans();
-        } catch (e) { show(e.message); }
+        openFormModal("Upraviť auto", `
+          <label>ŠPZ</label><input id="edit_plate_number" value="${escapeAttr(row.plate_number)}" />
+          <label>Model</label><input id="edit_model" value="${escapeAttr(row.model)}" />
+          <label>Spotreba (l / 100km)</label><input id="edit_consumption" type="number" step="0.1" value="${escapeAttr(row.expected_consumption_l_per_100km)}" />
+          <label>Objem nádrže (l)</label><input id="edit_tank_capacity" type="number" step="0.1" value="${escapeAttr(row.tank_capacity_l)}" />
+        `, async () => {
+          try {
+            show(await callApi(`/vehicles/${id}`, "PUT", {
+              plate_number: document.getElementById("edit_plate_number").value,
+              model: document.getElementById("edit_model").value,
+              expected_consumption_l_per_100km: Number(document.getElementById("edit_consumption").value),
+              tank_capacity_l: Number(document.getElementById("edit_tank_capacity").value),
+            }));
+            closeFormModal();
+            await loadVehicles();
+            await loadMonthPlans();
+          } catch (e) { show(e.message); }
+        });
       }
 
       async function deleteVehicle(id) {
@@ -902,9 +1000,20 @@
 
       async function editDriver(id) {
         const row = driversCache.find(r => r.id === id);
-        const full_name = prompt("Meno", row.full_name); if (full_name === null) return;
-        const license_number = prompt("Číslo vodičského", row.license_number); if (license_number === null) return;
-        try { show(await callApi(`/drivers/${id}`, "PUT", { full_name, license_number })); await loadDrivers(); await loadMonthPlans(); } catch (e) { show(e.message); }
+        openFormModal("Upraviť vodiča", `
+          <label>Meno</label><input id="edit_driver_name" value="${escapeAttr(row.full_name)}" />
+          <label>Číslo vodičského</label><input id="edit_driver_license" value="${escapeAttr(row.license_number)}" />
+        `, async () => {
+          try {
+            show(await callApi(`/drivers/${id}`, "PUT", {
+              full_name: document.getElementById("edit_driver_name").value,
+              license_number: document.getElementById("edit_driver_license").value,
+            }));
+            closeFormModal();
+            await loadDrivers();
+            await loadMonthPlans();
+          } catch (e) { show(e.message); }
+        });
       }
 
       async function deleteDriver(id) {
@@ -921,13 +1030,24 @@
 
       async function editCustomer(id) {
         const row = customersCache.find(r => r.id === id);
-        const name = prompt("Názov", row.name); if (name === null) return;
-        const address = prompt("Adresa", row.address); if (address === null) return;
-        const distance_from_base_km = prompt("Vzdialenosť od základne (km)", row.distance_from_base_km); if (distance_from_base_km === null) return;
-        const activeRaw = prompt("Použiť pri automatickom generovaní? (ano/nie)", row.active_for_generation ? "ano" : "nie");
-        if (activeRaw === null) return;
-        const active_for_generation = !["nie", "no", "0", "false"].includes(String(activeRaw).trim().toLowerCase());
-        try { show(await callApi(`/customers/${id}`, "PUT", { name, address, distance_from_base_km: Number(distance_from_base_km), active_for_generation })); await loadCustomers(); await loadTripsFiltered(); } catch (e) { show(e.message); }
+        openFormModal("Upraviť zákazníka", `
+          <label>Názov</label><input id="edit_customer_name" value="${escapeAttr(row.name)}" />
+          <label>Adresa</label><input id="edit_customer_address" value="${escapeAttr(row.address)}" />
+          <label>Vzdialenosť od základne (km)</label><input id="edit_customer_distance" type="number" step="0.1" value="${escapeAttr(row.distance_from_base_km)}" />
+          <label class="inline-check"><input id="edit_customer_active" type="checkbox" style="width:auto;" ${row.active_for_generation ? "checked" : ""} /> Používať pri automatickom generovaní jázd</label>
+        `, async () => {
+          try {
+            show(await callApi(`/customers/${id}`, "PUT", {
+              name: document.getElementById("edit_customer_name").value,
+              address: document.getElementById("edit_customer_address").value,
+              distance_from_base_km: Number(document.getElementById("edit_customer_distance").value),
+              active_for_generation: Boolean(document.getElementById("edit_customer_active").checked),
+            }));
+            closeFormModal();
+            await loadCustomers();
+            await loadTripsFiltered();
+          } catch (e) { show(e.message); }
+        });
       }
 
       async function deleteCustomer(id) {
@@ -944,21 +1064,39 @@
 
       async function editPlan(id) {
         const row = plansCache.find(r => r.id === id);
-        const vehicle_id = prompt("Vehicle ID", row.vehicle_id); if (vehicle_id === null) return;
-        const driver_id = prompt("Driver ID", row.driver_id); if (driver_id === null) return;
-        const year = prompt("Rok", row.year); if (year === null) return;
-        const month = prompt("Mesiac", row.month); if (month === null) return;
-        const base_address = prompt("Základná adresa", row.base_address); if (base_address === null) return;
-        const start_odometer_km = prompt("Počiatočné km", row.start_odometer_km); if (start_odometer_km === null) return;
-        const end_odometer_km = prompt("Koncové km", row.end_odometer_km); if (end_odometer_km === null) return;
-        try {
-          show(await callApi(`/month-plans/${id}`, "PUT", {
-            vehicle_id: Number(vehicle_id), driver_id: Number(driver_id), year: Number(year), month: Number(month), base_address,
-            start_odometer_km: Number(start_odometer_km), end_odometer_km: Number(end_odometer_km),
-          }));
-          await loadMonthPlans();
-          await loadTripsFiltered();
-        } catch (e) { show(e.message); }
+        openFormModal("Upraviť mesačný plán", `
+          <label>Vozidlo</label>
+          <select id="edit_plan_vehicle">${vehiclesCache.map(v => `<option value="${v.id}" ${v.id === row.vehicle_id ? "selected" : ""}>${escapeAttr(v.plate_number)} | ${escapeAttr(v.model)}</option>`).join("")}</select>
+          <label>Vodič</label>
+          <select id="edit_plan_driver">${driversCache.map(d => `<option value="${d.id}" ${d.id === row.driver_id ? "selected" : ""}>${escapeAttr(d.full_name)} | ${escapeAttr(d.license_number)}</option>`).join("")}</select>
+          <div class="row">
+            <div><label>Rok</label><input id="edit_plan_year" type="number" value="${escapeAttr(row.year)}" /></div>
+            <div><label>Mesiac</label><input id="edit_plan_month" type="number" value="${escapeAttr(row.month)}" /></div>
+          </div>
+          <label>Základná adresa</label><input id="edit_plan_base" value="${escapeAttr(row.base_address)}" />
+          <div class="row">
+            <div><label>Počiatočné km</label><input id="edit_plan_start" type="number" value="${escapeAttr(row.start_odometer_km)}" /></div>
+            <div><label>Koncové km</label><input id="edit_plan_end" type="number" value="${escapeAttr(row.end_odometer_km)}" /></div>
+          </div>
+          <label class="inline-check"><input id="edit_plan_private" type="checkbox" style="width:auto;" ${row.private_km_enabled ? "checked" : ""} /> Zohľadniť 10 % súkromných km mimo evidencie jázd</label>
+        `, async () => {
+          try {
+            show(await callApi(`/month-plans/${id}`, "PUT", {
+              vehicle_id: Number(document.getElementById("edit_plan_vehicle").value),
+              driver_id: Number(document.getElementById("edit_plan_driver").value),
+              year: Number(document.getElementById("edit_plan_year").value),
+              month: Number(document.getElementById("edit_plan_month").value),
+              base_address: document.getElementById("edit_plan_base").value,
+              start_odometer_km: Number(document.getElementById("edit_plan_start").value),
+              end_odometer_km: Number(document.getElementById("edit_plan_end").value),
+              private_km_enabled: Boolean(document.getElementById("edit_plan_private").checked),
+              private_km_ratio_percent: 10.0,
+            }));
+            closeFormModal();
+            await loadMonthPlans();
+            await loadTripsFiltered();
+          } catch (e) { show(e.message); }
+        });
       }
 
       async function deletePlan(id) {
@@ -975,21 +1113,35 @@
 
       async function editTrip(id) {
         const row = tripsCache.find(r => r.id === id);
-        const month_plan_id = prompt("Month plan ID", row.month_plan_id); if (month_plan_id === null) return;
-        const trip_date = prompt("Dátum (DD.MM.RRRR)", formatDateSk(row.trip_date)); if (trip_date === null) return;
-        const trip_end_date = prompt("Dátum do (DD.MM.RRRR, prázdne = bez)", formatDateSk(row.trip_end_date || "")); if (trip_end_date === null) return;
-        const customer_id = prompt("Customer ID (prázdne = bez)", row.customer_id ?? ""); if (customer_id === null) return;
-        const start_address = prompt("Štart adresa", row.start_address); if (start_address === null) return;
-        const end_address = prompt("Cieľ adresa", row.end_address); if (end_address === null) return;
-        const distance_km = prompt("Vzdialenosť km", row.distance_km); if (distance_km === null) return;
-        const note = prompt("Účel / poznámka", row.note ?? ""); if (note === null) return;
-        try {
-          show(await callApi(`/trips/${id}`, "PUT", {
-            month_plan_id: Number(month_plan_id), trip_date: normalizeDateForApi(trip_date), trip_end_date: trip_end_date ? normalizeDateForApi(trip_end_date) : null, customer_id: customer_id ? Number(customer_id) : null,
-            start_address, end_address, distance_km: Number(distance_km), note: note || null,
-          }));
-          await loadTripsFiltered();
-        } catch (e) { show(e.message); }
+        openFormModal("Upraviť jazdu", `
+          <label>Mesačný plán</label>
+          <select id="edit_trip_plan">${plansCache.map(p => `<option value="${p.id}" ${p.id === row.month_plan_id ? "selected" : ""}>${escapeAttr(p.month_name)} ${escapeAttr(p.year)} | ${escapeAttr(p.vehicle_plate_number)} | ${escapeAttr(p.driver_name)}</option>`).join("")}</select>
+          <label>Zákazník</label>
+          <select id="edit_trip_customer"><option value="">-- bez zákazníka --</option>${customersCache.map(c => `<option value="${c.id}" ${c.id === row.customer_id ? "selected" : ""}>${escapeAttr(c.name)} (${escapeAttr(c.distance_from_base_km)} km)</option>`).join("")}</select>
+          <div class="row">
+            <div><label>Dátum</label><input id="edit_trip_date" value="${escapeAttr(formatDateSk(row.trip_date))}" /></div>
+            <div><label>Dátum do</label><input id="edit_trip_date_to" value="${escapeAttr(formatDateSk(row.trip_end_date || ""))}" /></div>
+          </div>
+          <label>Štart adresa</label><input id="edit_trip_start" value="${escapeAttr(row.start_address)}" />
+          <label>Cieľ adresa</label><input id="edit_trip_end" value="${escapeAttr(row.end_address)}" />
+          <label>Vzdialenosť (km)</label><input id="edit_trip_distance" type="number" step="0.1" value="${escapeAttr(row.distance_km)}" />
+          <label>Účel / poznámka</label><input id="edit_trip_note" value="${escapeAttr(row.note)}" />
+        `, async () => {
+          try {
+            show(await callApi(`/trips/${id}`, "PUT", {
+              month_plan_id: Number(document.getElementById("edit_trip_plan").value),
+              trip_date: normalizeDateForApi(document.getElementById("edit_trip_date").value),
+              trip_end_date: document.getElementById("edit_trip_date_to").value ? normalizeDateForApi(document.getElementById("edit_trip_date_to").value) : null,
+              customer_id: document.getElementById("edit_trip_customer").value ? Number(document.getElementById("edit_trip_customer").value) : null,
+              start_address: document.getElementById("edit_trip_start").value,
+              end_address: document.getElementById("edit_trip_end").value,
+              distance_km: Number(document.getElementById("edit_trip_distance").value),
+              note: document.getElementById("edit_trip_note").value || null,
+            }));
+            closeFormModal();
+            await loadTripsFiltered();
+          } catch (e) { show(e.message); }
+        });
       }
 
       async function deleteTrip(id) {
@@ -1006,22 +1158,30 @@
 
       async function editRefuel(id) {
         const row = refuelsCache.find(r => r.id === id);
-        const month_plan_id = prompt("Month plan ID", row.month_plan_id); if (month_plan_id === null) return;
-        const refuel_date = prompt("Dátum (DD.MM.RRRR)", formatDateSk(row.refuel_date)); if (refuel_date === null) return;
-        const liters = prompt("Litre", row.liters); if (liters === null) return;
-        const total_price_eur = prompt("Cena EUR (prázdne = bez)", row.total_price_eur ?? ""); if (total_price_eur === null) return;
-        const location_city = prompt("Mesto tankovania (prázdne = bez)", row.location_city ?? ""); if (location_city === null) return;
-        const is_foreign = confirm("Je tankovanie zahraničie? (OK = áno, Storno = nie)");
-        const odometer_km = prompt("Tachometer (prázdne = bez)", row.odometer_km ?? ""); if (odometer_km === null) return;
-        try {
-          show(await callApi(`/refuels/${id}`, "PUT", {
-            month_plan_id: Number(month_plan_id), refuel_date: normalizeDateForApi(refuel_date), liters: Number(liters), odometer_km: odometer_km ? Number(odometer_km) : null,
-            total_price_eur: total_price_eur ? Number(total_price_eur) : null,
-            location_city: location_city || null,
-            is_foreign,
-          }));
-          await loadRefuelsByMonth();
-        } catch (e) { show(e.message); }
+        openFormModal("Upraviť tankovanie", `
+          <label>Mesačný plán</label>
+          <select id="edit_refuel_plan">${plansCache.map(p => `<option value="${p.id}" ${p.id === row.month_plan_id ? "selected" : ""}>${escapeAttr(p.month_name)} ${escapeAttr(p.year)} | ${escapeAttr(p.vehicle_plate_number)} | ${escapeAttr(p.driver_name)}</option>`).join("")}</select>
+          <label>Dátum</label><input id="edit_refuel_date" value="${escapeAttr(formatDateSk(row.refuel_date))}" />
+          <label>Litre</label><input id="edit_refuel_liters" type="number" step="0.1" value="${escapeAttr(row.liters)}" />
+          <label>Cena tankovania (EUR)</label><input id="edit_refuel_price" type="number" step="0.01" value="${escapeAttr(row.total_price_eur)}" />
+          <label>Mesto tankovania</label><input id="edit_refuel_city" value="${escapeAttr(row.location_city)}" />
+          <label class="inline-check"><input id="edit_refuel_foreign" type="checkbox" style="width:auto;" ${row.is_foreign ? "checked" : ""} /> Zahraničie</label>
+          <label>Tachometer</label><input id="edit_refuel_odo" type="number" value="${escapeAttr(row.odometer_km)}" />
+        `, async () => {
+          try {
+            show(await callApi(`/refuels/${id}`, "PUT", {
+              month_plan_id: Number(document.getElementById("edit_refuel_plan").value),
+              refuel_date: normalizeDateForApi(document.getElementById("edit_refuel_date").value),
+              liters: Number(document.getElementById("edit_refuel_liters").value),
+              total_price_eur: document.getElementById("edit_refuel_price").value ? Number(document.getElementById("edit_refuel_price").value) : null,
+              location_city: document.getElementById("edit_refuel_city").value || null,
+              is_foreign: Boolean(document.getElementById("edit_refuel_foreign").checked),
+              odometer_km: document.getElementById("edit_refuel_odo").value ? Number(document.getElementById("edit_refuel_odo").value) : null,
+            }));
+            closeFormModal();
+            await loadRefuelsByMonth();
+          } catch (e) { show(e.message); }
+        });
       }
 
       async function deleteRefuel(id) {
@@ -1040,8 +1200,14 @@
         try {
           const id = Number(x_mid.value || 0);
           if (!id) { show("Vyber mesačný plán pre generovanie"); return; }
-          show(await callApi(`/month-plans/${id}/generate`, "POST"));
+          show(await callApi(`/month-plans/${id}/generate`, "POST", {
+            private_km_enabled: Boolean(x_private_km.checked),
+            private_km_ratio_percent: 10.0,
+          }));
+          const selectedPlan = plansCache.find(p => p.id === id);
+          if (selectedPlan) selectedPlan.private_km_enabled = Boolean(x_private_km.checked);
           await loadTripsFiltered();
+          await loadMonthPlans();
         } catch (e) { show(e.message); }
       }
 
@@ -1051,7 +1217,7 @@
           if (!id) { show("Vyber mesačný plán pre report"); return; }
           const report = await callApi(`/month-plans/${id}/report`);
           show(report);
-          report_metrics.textContent = `Priemerná spotreba za mesiac: ${report.average_consumption_l_per_100km ?? "-"} l/100km`;
+          report_metrics.textContent = `Priemerná spotreba: ${report.average_consumption_l_per_100km ?? "-"} l/100km | Evidované služobné km: ${report.recorded_service_km} | Skryté súkromné km: ${report.hidden_private_km} | Spolu: ${report.total_km}/${report.target_km} km`;
         } catch (e) { show(e.message); }
       }
 
@@ -1093,6 +1259,7 @@
         try {
           initTheme();
           refreshTripColumnSelector();
+          await loadMeta();
           await loadSettings();
           await Promise.all([loadVehicles(), loadDrivers(), loadCustomers(), loadMonthPlans(), loadVehicleConsumptionSummary()]);
           await loadTripsFiltered();

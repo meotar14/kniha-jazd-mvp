@@ -60,6 +60,8 @@ class MonthPlanCreate(BaseModel):
     base_address: str = Field(min_length=3, max_length=256)
     start_odometer_km: int = Field(ge=0)
     end_odometer_km: int = Field(ge=0)
+    private_km_enabled: bool = False
+    private_km_ratio_percent: float = Field(default=10.0, ge=0, le=90)
 
 
 class MonthPlanUpdate(MonthPlanCreate):
@@ -110,6 +112,10 @@ class GenerateResponse(BaseModel):
     generated_trips: int
     generated_km: float
     target_km: int
+    service_target_km: float
+    hidden_private_km: float
+    recorded_service_km: float
+    total_km_including_private: float
     total_trips_after_generation: int
     estimated_fuel_l: float
     refueled_l: float
@@ -120,11 +126,19 @@ class MonthReport(BaseModel):
     month_plan_id: int
     target_km: int
     total_km: float
+    recorded_service_km: float
+    hidden_private_km: float
+    service_target_km: float
     refueled_l: float
     estimated_fuel_l: float
     fuel_difference_l: float
     average_consumption_l_per_100km: float | None = None
     trips_count: int
+
+
+class GenerateOptions(BaseModel):
+    private_km_enabled: bool = False
+    private_km_ratio_percent: float = Field(default=10.0, ge=0, le=90)
 
 
 class AppSettingsUpdate(BaseModel):
