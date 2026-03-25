@@ -152,15 +152,3 @@ Odporúčaný postup:
 1. pred aktualizáciou spraviť export zálohy
 2. odložiť súbor mimo servera
 3. až potom robiť update alebo redeploy
-
-## 11. Release A Kontakty
-
-V aplikácii sa zobrazuje:
-- release verzia
-- kontakt `meotar@airo.sk`
-- kontakt `meotar@gmail.com`
-
-Tieto informácie sú viditeľné:
-- v hlavičke
-- v nastaveniach
-- v pravom dolnom rohu aplikácie
