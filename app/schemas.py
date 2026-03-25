@@ -26,6 +26,7 @@ class VehicleCreate(BaseModel):
     model: str = Field(min_length=1, max_length=128)
     expected_consumption_l_per_100km: float = Field(gt=0)
     tank_capacity_l: float = Field(gt=0)
+    default_driver_id: int | None = None
 
 
 class VehicleUpdate(VehicleCreate):

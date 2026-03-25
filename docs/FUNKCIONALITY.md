@@ -6,6 +6,7 @@ Tento dokument popisuje hlavné moduly aplikácie `kniha-jazd-mvp`, rozdiely med
 
 ### Autá
 - evidencia vozidiel, ŠPZ, modelu, priemernej spotreby a objemu nádrže
+- možnosť nastaviť hlavného vodiča auta
 - podklad pre mesačné plány, jazdy, tankovania a reporty
 
 ### Vodiči
@@ -21,6 +22,7 @@ Tento dokument popisuje hlavné moduly aplikácie `kniha-jazd-mvp`, rozdiely med
 - mesačný plán pre konkrétne auto a vodiča
 - obsahuje mesiac, rok, základnú adresu a stav km na začiatku a konci obdobia
 - tvorí hlavnú jednotku pre jazdy, tankovania, reporty a exporty
+- pri výbere auta sa vie automaticky predvyplniť jeho hlavný vodič
 
 ### Jazdy
 - ručne zadané alebo automaticky generované jazdy

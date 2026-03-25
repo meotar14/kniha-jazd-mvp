@@ -14,8 +14,10 @@ class Vehicle(Base):
     model: Mapped[str] = mapped_column(String(128), nullable=False)
     expected_consumption_l_per_100km: Mapped[float] = mapped_column(Float, nullable=False)
     tank_capacity_l: Mapped[float] = mapped_column(Float, nullable=False, default=50.0)
+    default_driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
 
     month_plans: Mapped[list["MonthPlan"]] = relationship(back_populates="vehicle")
+    default_driver: Mapped["Driver | None"] = relationship(foreign_keys=[default_driver_id])
 
 
 class Driver(Base):

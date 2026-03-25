@@ -30,6 +30,7 @@ API beží na:
 ## 2. Čo systém vie
 
 - Evidencia vozidla, vodiča, zákazníkov a ich vzdialenosti od základne
+- Možnosť nastaviť na aute hlavného vodiča, ktorý sa pri novom mesačnom pláne predvyplní automaticky
 - Evidencia objemu nádrže na vozidle + kontrola, aby tankovanie neprekročilo kapacitu nádrže
 - Pri tankovaní je možné vybrať vozidlo a dátum, plán sa priradí automaticky podľa mesiaca
 - Evidencia mesačného plánu (`start_odometer_km`, `end_odometer_km`)

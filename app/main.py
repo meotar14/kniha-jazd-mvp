@@ -57,6 +57,7 @@ def run_lightweight_migrations() -> None:
         conn.execute(text("ALTER TABLE month_plans ADD COLUMN IF NOT EXISTS private_km_ratio_percent FLOAT DEFAULT 10"))
         conn.execute(text("UPDATE month_plans SET private_km_ratio_percent = 10 WHERE private_km_ratio_percent IS NULL"))
         conn.execute(text("ALTER TABLE month_plans ALTER COLUMN private_km_ratio_percent SET NOT NULL"))
+        conn.execute(text("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS default_driver_id INTEGER"))
 
 
 def ensure_settings_row(db: Session) -> models.AppSettings:
@@ -185,6 +186,7 @@ def export_backup_json(db: Session = Depends(get_db)) -> Response:
                 "model": v.model,
                 "expected_consumption_l_per_100km": v.expected_consumption_l_per_100km,
                 "tank_capacity_l": v.tank_capacity_l,
+                "default_driver_id": v.default_driver_id,
             }
             for v in db.query(models.Vehicle).order_by(models.Vehicle.id.asc()).all()
         ],
@@ -293,6 +295,8 @@ async def import_backup_json(
             )
         )
 
+        for d in payload["drivers"]:
+            db.add(models.Driver(id=int(d["id"]), full_name=d["full_name"], license_number=d["license_number"]))
         for v in payload["vehicles"]:
             db.add(
                 models.Vehicle(
@@ -301,10 +305,9 @@ async def import_backup_json(
                     model=v["model"],
                     expected_consumption_l_per_100km=float(v["expected_consumption_l_per_100km"]),
                     tank_capacity_l=float(v.get("tank_capacity_l", 50)),
+                    default_driver_id=int(v["default_driver_id"]) if v.get("default_driver_id") else None,
                 )
             )
-        for d in payload["drivers"]:
-            db.add(models.Driver(id=int(d["id"]), full_name=d["full_name"], license_number=d["license_number"]))
         for c in payload["customers"]:
             db.add(
                 models.Customer(
@@ -420,6 +423,8 @@ def serialize_vehicle(vehicle: models.Vehicle) -> dict:
         "model": vehicle.model,
         "expected_consumption_l_per_100km": vehicle.expected_consumption_l_per_100km,
         "tank_capacity_l": vehicle.tank_capacity_l,
+        "default_driver_id": vehicle.default_driver_id,
+        "default_driver_name": vehicle.default_driver.full_name if vehicle.default_driver else None,
     }
 
 
@@ -760,7 +765,7 @@ def build_export_rows_for_mixed_trips(trips: list[models.Trip]) -> list[dict]:
 
 @app.get("/vehicles")
 def list_vehicles(db: Session = Depends(get_db)) -> list[dict]:
-    rows = db.query(models.Vehicle).order_by(models.Vehicle.id.asc()).all()
+    rows = db.query(models.Vehicle).options(joinedload(models.Vehicle.default_driver)).order_by(models.Vehicle.id.asc()).all()
     return [serialize_vehicle(r) for r in rows]
 
 
@@ -796,6 +801,8 @@ def vehicle_consumption_summary(db: Session = Depends(get_db)) -> list[dict]:
 
 @app.post("/vehicles")
 def create_vehicle(payload: schemas.VehicleCreate, db: Session = Depends(get_db)) -> dict:
+    if payload.default_driver_id and not db.get(models.Driver, payload.default_driver_id):
+        raise HTTPException(status_code=404, detail="default driver not found")
     vehicle = models.Vehicle(**payload.model_dump())
     db.add(vehicle)
     db.commit()
@@ -808,6 +815,8 @@ def update_vehicle(vehicle_id: int, payload: schemas.VehicleUpdate, db: Session 
     vehicle = db.get(models.Vehicle, vehicle_id)
     if not vehicle:
         raise HTTPException(status_code=404, detail="vehicle not found")
+    if payload.default_driver_id and not db.get(models.Driver, payload.default_driver_id):
+        raise HTTPException(status_code=404, detail="default driver not found")
     for key, value in payload.model_dump().items():
         setattr(vehicle, key, value)
     try:
@@ -869,6 +878,8 @@ def delete_driver(driver_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail="driver not found")
     if db.query(models.MonthPlan).filter(models.MonthPlan.driver_id == driver_id).first():
         raise HTTPException(status_code=409, detail="driver is used in month plans")
+    if db.query(models.Vehicle).filter(models.Vehicle.default_driver_id == driver_id).first():
+        raise HTTPException(status_code=409, detail="driver is used as default driver on a vehicle")
     db.delete(driver)
     db.commit()
     return {"deleted": True, "id": driver_id}

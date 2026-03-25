@@ -25,6 +25,9 @@ Vyplň:
 - model
 - priemernú spotrebu
 - objem nádrže
+- prípadne hlavného vodiča
+
+Ak nastavíš hlavnému autu vodiča, pri vytváraní nového mesačného plánu sa tento vodič predvyplní automaticky.
 
 ### Vodič
 Vyplň:

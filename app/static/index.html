@@ -213,7 +213,7 @@
         <div class="grid">
           <div class="card">
             <h2>Nový mesačný plán</h2>
-            <label>Vozidlo</label><select id="m_vid"></select>
+            <label>Vozidlo</label><select id="m_vid" onchange="applyDefaultDriverForSelectedVehicle()"></select>
             <label>Vodič</label><select id="m_did"></select>
             <div class="row">
               <div><label>Rok</label><input id="m_year" type="number" value="2026" /></div>
@@ -248,6 +248,7 @@
             <label>Model</label><input id="v_model" />
             <label>Spotreba (l / 100km)</label><input id="v_cons" type="number" step="0.1" />
             <label>Objem nádrže (l)</label><input id="v_tank" type="number" step="0.1" value="50" />
+            <label>Hlavný vodič (voliteľne)</label><select id="v_default_driver"></select>
             <button onclick="createVehicle()">Uložiť auto</button>
           </div>
           <div class="card">
@@ -628,6 +629,7 @@
         fillSelect("m_vid", vehiclesCache, v => `${v.plate_number} | ${v.model}`);
         fillSelect("r_vehicle", vehiclesCache, v => `${v.plate_number} | ${v.model}`);
         fillSelect("m_did", driversCache, d => `${d.full_name} | ${d.license_number}`);
+        fillSelect("v_default_driver", driversCache, d => `${d.full_name} | ${d.license_number}`);
         fillSelect("t_customer", customersCache, c => `${c.name} (${c.distance_from_base_km} km)`, "id", true);
         const formatPlan = p => `${p.month_name} ${p.year} | ${p.vehicle_plate_number} | ${p.driver_name}`;
         ["t_mid", "x_mid", "list_mid_refuels"].forEach(id => fillSelect(id, plansCache, formatPlan));
@@ -635,6 +637,16 @@
         if (trip_filter_plan.options.length) trip_filter_plan.options[0].textContent = "Všetky plány";
         if (!trip_filter_plan.value) trip_filter_plan.value = "";
         syncGenerateOptionsFromPlan();
+        applyDefaultDriverForSelectedVehicle();
+      }
+
+      function applyDefaultDriverForSelectedVehicle() {
+        const vehicle = vehiclesCache.find(v => v.id === Number(m_vid.value || 0));
+        if (vehicle && vehicle.default_driver_id) {
+          m_did.value = String(vehicle.default_driver_id);
+        } else {
+          m_did.value = "";
+        }
       }
 
       function syncGenerateOptionsFromPlan() {
@@ -782,7 +794,7 @@
       async function loadVehicles() {
         vehiclesCache = await callApi("/vehicles");
         render("vehicles_table", tableHtml(
-          ["id", "plate_number", "model", "expected_consumption_l_per_100km", "tank_capacity_l"],
+          ["id", "plate_number", "model", "default_driver_name", "expected_consumption_l_per_100km", "tank_capacity_l"],
           vehiclesCache,
           r => `<button class='btn-small' onclick='editVehicle(${r.id})'>Upraviť</button><button class='btn-small btn-danger' onclick='deleteVehicle(${r.id})'>Zmazať</button>`,
           "vehicles"
@@ -872,6 +884,7 @@
             model: v_model.value,
             expected_consumption_l_per_100km: Number(v_cons.value),
             tank_capacity_l: Number(v_tank.value),
+            default_driver_id: v_default_driver.value ? Number(v_default_driver.value) : null,
           });
           show(result);
           await loadVehicles();
@@ -971,6 +984,11 @@
           <label>Model</label><input id="edit_model" value="${escapeAttr(row.model)}" />
           <label>Spotreba (l / 100km)</label><input id="edit_consumption" type="number" step="0.1" value="${escapeAttr(row.expected_consumption_l_per_100km)}" />
           <label>Objem nádrže (l)</label><input id="edit_tank_capacity" type="number" step="0.1" value="${escapeAttr(row.tank_capacity_l)}" />
+          <label>Hlavný vodič (voliteľne)</label>
+          <select id="edit_default_driver">
+            <option value="">-- bez predvoleného vodiča --</option>
+            ${driversCache.map(d => `<option value="${d.id}" ${d.id === row.default_driver_id ? "selected" : ""}>${escapeAttr(d.full_name)} | ${escapeAttr(d.license_number)}</option>`).join("")}
+          </select>
         `, async () => {
           try {
             show(await callApi(`/vehicles/${id}`, "PUT", {
@@ -978,6 +996,7 @@
               model: document.getElementById("edit_model").value,
               expected_consumption_l_per_100km: Number(document.getElementById("edit_consumption").value),
               tank_capacity_l: Number(document.getElementById("edit_tank_capacity").value),
+              default_driver_id: document.getElementById("edit_default_driver").value ? Number(document.getElementById("edit_default_driver").value) : null,
             }));
             closeFormModal();
             await loadVehicles();
