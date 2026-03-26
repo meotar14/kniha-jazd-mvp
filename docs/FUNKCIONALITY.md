@@ -50,7 +50,9 @@ Tento dokument popisuje hlavné moduly aplikácie `kniha-jazd-mvp`, rozdiely med
 - `Shift + klik` výber rozsahu riadkov
 - filtrovanie plánov podľa auta, vodiča, mesiaca a roka
 - filtrovanie jázd podľa plánu, auta, vodiča, mesiaca, roka a typu záznamu
+- triedenie zákazníkov podľa mena, vzdialenosti, vytvorenia a poslednej úpravy
 - konfigurovateľné stĺpce v zozname jázd
+- viditeľné potvrdenie uloženia po vytvorení záznamu
 - ručné jazdy s rozsahom dátumov
 - import zákazníkov z CSV s mapovaním stĺpcov a dôvodmi chýb
 - odhad vzdialenosti zákazníka podľa adresy základne a adresy zákazníka
@@ -86,12 +88,13 @@ Generovanie jazd funguje nad mesačným plánom a jeho cieľovým nájazdom.
 
 ### Súkromné Km Mimo Evidencie
 - pri generovaní je možné zapnúť režim, v ktorom sa 10 % celkového mesačného plánu berie ako súkromné km
-- tieto km sa nezapíšu do zoznamu jázd a neexportujú sa do knihy jázd
-- do plánu sa však započítajú pri kontrole celkového mesačného nájazdu
-- v exportoch sa prejavia ako rozdiel medzi koncom jednej služobnej jazdy a začiatkom ďalšej jazdy v tachometri
+- tieto km sa generujú ako samostatné jazdy typu `Sukromna jazda`
+- nemajú povinný štart ani cieľ
+- zobrazujú sa v zozname jázd aj v exportoch
+- do plánu sa započítajú pri kontrole celkového mesačného nájazdu
 - report preto zobrazuje osobitne:
   evidované služobné km,
-  skryté súkromné km,
+  súkromné km,
   celkové km do plánu
 
 ## Tankovanie A Súvislosti
@@ -145,7 +148,7 @@ Report je určený na kontrolu mesačného plánu.
 - export do excel template knihy jázd
 - používa pripravenú šablónu s mesačnými záložkami
 - pri exporte za konkrétny plán sa vyplnia všetky dostupné mesiace daného auta a roka
-- ak sú zapnuté skryté súkromné km, neobjavia sa ako samostatné riadky, ale ovplyvnia pokračovanie tachometra medzi jazdami
+- ak sú zapnuté súkromné km, objavia sa ako samostatné riadky s účelom `Sukromna jazda`
 
 ### Export Mesačného Plánu: Jazdy + Tankovania
 - používa rovnaký ročný excel template knihy jázd

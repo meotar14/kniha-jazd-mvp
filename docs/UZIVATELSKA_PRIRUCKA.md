@@ -55,9 +55,10 @@ Voliteľne môžeš zapnúť:
 - `Zohľadniť 10 % súkromných km mimo evidencie jázd`
 
 Tento režim znamená:
-- 10 % z mesačného nájazdu sa nebude evidovať v zozname jázd
-- tieto km však budú započítané do celkového mesačného plánu
-- v exporte sa neukážu ako nové riadky, ale prejavia sa v stave tachometra medzi služobnými jazdami
+- 10 % z mesačného nájazdu sa vygeneruje ako súkromné jazdy
+- tieto jazdy budú viditeľné v zozname jázd
+- v exporte budú mať účel `Sukromna jazda`
+- tieto km sa započítajú do celkového mesačného plánu
 
 ## 4. Tankovania
 
@@ -145,11 +146,20 @@ V zoznamoch `Plány` a `Jazdy` môžeš filtrovať podľa:
 Pri jazdách môžeš navyše filtrovať:
 - len manuálne jazdy
 - len generované jazdy
+- len súkromné jazdy
 - všetky jazdy
+
+V zozname `Zákazníci` môžeš triediť podľa:
+- mena
+- vzdialenosti
+- dátumu vytvorenia
+- dátumu poslednej úpravy
 
 ## 10. Editácia Záznamov
 
 Každý záznam je možné upraviť tlačidlom `Upraviť`.
+
+Po vytvorení nového záznamu aplikácia zobrazí aj viditeľné potvrdenie uloženia, aby nevznikali duplicitné kliknutia.
 
 Editácia sa otvára ako plný formulár, kde vidíš všetky polia naraz. To platí pre:
 - autá

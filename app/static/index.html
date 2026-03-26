@@ -79,6 +79,7 @@
       .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; }
       .pill.generated { background: #d1fae5; color: #065f46; }
       .pill.manual { background: #e0e7ff; color: #3730a3; }
+      .pill.private { background: #fee2e2; color: #991b1b; }
       .output {
         background: #0b1020; color: #d5e2ff; border-radius: 10px; padding: 12px; min-height: 110px;
         margin-top: 14px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -104,10 +105,16 @@
       .modal-head button { width: auto; margin: 0; }
       .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
       .modal-actions button { width: auto; margin: 0; }
+      .notice {
+        display: none; margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; font-weight: 700;
+        border: 1px solid #86efac; background: #ecfdf3; color: #166534;
+      }
+      .notice.show { display: block; }
     </style>
   </head>
   <body>
     <div class="wrap">
+      <div id="save_notice" class="notice">Uložené.</div>
       <div class="topbar">
         <div class="brand">
           <img id="company_logo" alt="Logo" />
@@ -171,6 +178,7 @@
                 <option value="all">Všetky jazdy</option>
                 <option value="manual">Len manuálne</option>
                 <option value="generated">Len generované</option>
+                <option value="private">Len súkromné</option>
               </select>
               <button onclick="loadTripsFiltered()">Načítať jazdy</button>
               <button onclick="downloadFilteredTripsCsv()">Export filtrovaných jázd CSV</button>
@@ -301,6 +309,18 @@
           </div>
           <div class="card">
             <h2>Zoznam zákazníkov</h2>
+            <div class="toolbar">
+              <select id="customer_sort_by">
+                <option value="name">Podľa mena</option>
+                <option value="distance">Podľa vzdialenosti</option>
+                <option value="created_at">Podľa vytvorenia</option>
+                <option value="updated_at">Podľa úpravy</option>
+              </select>
+              <select id="customer_sort_dir">
+                <option value="asc">Vzostupne</option>
+                <option value="desc">Zostupne</option>
+              </select>
+            </div>
             <button onclick="loadCustomers()">Obnoviť</button>
             <button onclick="bulkDeleteCustomers()">Zmazať vybrané</button>
             <div class="table-wrap"><table id="customers_table"></table></div>
@@ -358,6 +378,7 @@
 
     <script>
       const out = document.getElementById("out");
+      const saveNotice = document.getElementById("save_notice");
       const editModal = document.getElementById("edit_modal");
       const editModalTitle = document.getElementById("edit_modal_title");
       const editModalBody = document.getElementById("edit_modal_body");
@@ -370,7 +391,7 @@
       let refuelsCache = [];
       let settingsCache = null;
       let metaCache = null;
-      const allTripColumns = ["id", "month_name", "trip_date", "trip_end_date", "customer_name", "start_address", "end_address", "distance_km", "generated", "note"];
+      const allTripColumns = ["id", "month_name", "trip_date", "trip_end_date", "customer_name", "is_private", "start_address", "end_address", "distance_km", "generated", "note"];
       let tripColumnOrder = JSON.parse(localStorage.getItem("tripColumnOrder") || "null") || [...allTripColumns];
       let hiddenTripColumns = new Set(JSON.parse(localStorage.getItem("hiddenTripColumns") || "[]"));
       const selectedIds = {
@@ -451,7 +472,7 @@
         if (data.generated_trips !== undefined && data.generated_km !== undefined) {
           return `Generovanie hotové: ${data.generated_trips} jázd, ${data.generated_km} služobných km.`
             + ` Evidované služobné km: ${data.recorded_service_km}.`
-            + ` Skryté súkromné km v tachometri medzi jazdami: ${data.hidden_private_km}.`
+            + ` Súkromné km: ${data.hidden_private_km}.`
             + ` Spolu do plánu: ${data.total_km_including_private}/${data.target_km} km.`
             + (data.warning ? ` Upozornenie: ${data.warning}` : "");
         }
@@ -466,6 +487,13 @@
 
       function show(data) {
         out.textContent = prettyLog(data);
+      }
+
+      function flashSaved(message) {
+        saveNotice.textContent = message;
+        saveNotice.classList.add("show");
+        clearTimeout(flashSaved.timer);
+        flashSaved.timer = setTimeout(() => saveNotice.classList.remove("show"), 2400);
       }
 
       function formatDateSk(value) {
@@ -498,6 +526,10 @@
         return `<span class="pill ${klass}">${label}</span>`;
       }
 
+      function formatPrivatePill(value) {
+        return value ? `<span class="pill private">súkromná</span>` : "";
+      }
+
       function tableHtml(columns, rows, actionBuilder = null, entityKey = null) {
         if (!rows || rows.length === 0) {
           return "<thead><tr><th>Info</th></tr></thead><tbody><tr><td>Ziadne data</td></tr></tbody>";
@@ -512,6 +544,7 @@
             : "";
           const cells = columns.map(c => {
             if (c === "generated") return `<td>${formatGeneratedPill(r[c])}</td>`;
+            if (c === "is_private") return `<td>${formatPrivatePill(r[c])}</td>`;
             if (c.includes("date")) return `<td>${formatDateSk(r[c]) ?? ""}</td>`;
             if (typeof r[c] === "string" && /^\\d{4}-\\d{2}-\\d{2}/.test(r[c])) return `<td>${formatDateSk(r[c])}</td>`;
             if (typeof r[c] === "boolean") return `<td>${r[c] ? "áno" : "nie"}</td>`;
@@ -824,8 +857,10 @@
       }
 
       async function loadCustomers() {
-        customersCache = await callApi("/customers");
-        render("customers_table", tableHtml(["id", "name", "address", "distance_from_base_km", "active_for_generation"], customersCache,
+        const sortBy = customer_sort_by.value || "name";
+        const sortDir = customer_sort_dir.value || "asc";
+        customersCache = await callApi(`/customers?sort_by=${encodeURIComponent(sortBy)}&sort_dir=${encodeURIComponent(sortDir)}`);
+        render("customers_table", tableHtml(["id", "name", "address", "distance_from_base_km", "active_for_generation", "created_at", "updated_at"], customersCache,
           r => `<button class='btn-small' onclick='editCustomer(${r.id})'>Upraviť</button><button class='btn-small btn-danger' onclick='deleteCustomer(${r.id})'>Zmazať</button>`,
           "customers"
         ));
@@ -903,6 +938,7 @@
             default_driver_id: v_default_driver.value ? Number(v_default_driver.value) : null,
           });
           show(result);
+          flashSaved("Auto bolo uložené.");
           await loadVehicles();
         } catch (e) { show(e.message); }
       }
@@ -911,6 +947,7 @@
         try {
           const result = await callApi("/drivers", "POST", { full_name: d_name.value, license_number: d_lic.value });
           show(result);
+          flashSaved("Vodič bol uložený.");
           await loadDrivers();
         } catch (e) { show(e.message); }
       }
@@ -924,6 +961,7 @@
             active_for_generation: Boolean(c_active_gen.checked),
           });
           show(result);
+          flashSaved("Zákazník bol uložený.");
           await loadCustomers();
         } catch (e) { show(e.message); }
       }
@@ -942,6 +980,7 @@
             private_km_ratio_percent: 10.0,
           });
           show(result);
+          flashSaved("Mesačný plán bol uložený.");
           await loadMonthPlans();
           x_mid.value = String(result.id);
           t_mid.value = String(result.id);
@@ -968,6 +1007,7 @@
             note: t_note.value || null,
           });
           show(result);
+          flashSaved("Jazda bola uložená.");
           await loadTripsFiltered();
         } catch (e) { show(e.message); }
       }
@@ -988,6 +1028,7 @@
             odometer_km: odometer,
           });
           show(result);
+          flashSaved("Tankovanie bolo uložené.");
           if (result.month_plan_id) list_mid_refuels.value = String(result.month_plan_id);
           await loadRefuelsByMonth();
         } catch (e) { show(e.message); }
@@ -1252,7 +1293,7 @@
           if (!id) { show("Vyber mesačný plán pre report"); return; }
           const report = await callApi(`/month-plans/${id}/report`);
           show(report);
-          report_metrics.textContent = `Priemerná spotreba: ${report.average_consumption_l_per_100km ?? "-"} l/100km | Evidované služobné km: ${report.recorded_service_km} | Skryté súkromné km: ${report.hidden_private_km} | Spolu: ${report.total_km}/${report.target_km} km`;
+          report_metrics.textContent = `Priemerná spotreba: ${report.average_consumption_l_per_100km ?? "-"} l/100km | Evidované služobné km: ${report.recorded_service_km} | Súkromné km: ${report.hidden_private_km} | Spolu: ${report.total_km}/${report.target_km} km`;
         } catch (e) { show(e.message); }
       }
 

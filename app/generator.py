@@ -22,13 +22,13 @@ def plan_service_target_km(month_plan: models.MonthPlan) -> float:
 
 def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[int, float]:
     target_km = plan_service_target_km(month_plan)
-    existing_km = sum(t.distance_km for t in month_plan.trips)
-    remaining = round(target_km - existing_km, 1)
-    if remaining <= 0:
-        return 0, 0.0
+    target_private_km = plan_private_km(month_plan)
+    existing_service_km = sum(t.distance_km for t in month_plan.trips if not t.is_private)
+    existing_private_km = sum(t.distance_km for t in month_plan.trips if t.is_private)
+    remaining = round(target_km - existing_service_km, 1)
 
     customers = db.query(models.Customer).all()
-    if not customers:
+    if remaining > 0 and not customers:
         return 0, 0.0
     base_normalized = (month_plan.base_address or "").strip().casefold()
     eligible_customers = [
@@ -38,7 +38,7 @@ def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[i
         and c.distance_from_base_km > 0
         and (c.address or "").strip().casefold() != base_normalized
     ]
-    if not eligible_customers:
+    if remaining > 0 and not eligible_customers:
         return 0, 0.0
 
     days_in_month = calendar.monthrange(month_plan.year, month_plan.month)[1]
@@ -64,7 +64,7 @@ def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[i
         for d in range(1, days_in_month + 1)
         if date(month_plan.year, month_plan.month, d) not in blocked_dates
     ]
-    if not day_pool:
+    if not day_pool and remaining > 0:
         return 0, 0.0
 
     # Existing cumulative km by date.
@@ -121,6 +121,7 @@ def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[i
                 end_address=selected_customer.address,
                 distance_km=round(trip_km, 1),
                 generated=True,
+                is_private=False,
                 note="Automaticky generovana jazda",
             )
         )
@@ -192,8 +193,35 @@ def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[i
             trip.distance_km = round(trip.distance_km + add_km, 1)
             remaining = round(remaining - add_km, 1)
 
+    private_remaining = round(target_private_km - existing_private_km, 1)
+    if private_remaining > 0:
+        source_dates = [trip.trip_date for trip in sorted(month_plan.trips + generated, key=lambda t: (t.trip_date, t.id or 0)) if not t.is_private]
+        private_dates = source_dates if source_dates else day_pool
+        if private_dates:
+            total_tenths = max(0, int(round(private_remaining * 10)))
+            slots = len(private_dates)
+            base_units, remainder = divmod(total_tenths, slots)
+            for index, trip_date in enumerate(private_dates):
+                units = base_units + (1 if index < remainder else 0)
+                distance_km = round(units / 10.0, 1)
+                if distance_km <= 0:
+                    continue
+                generated.append(
+                    models.Trip(
+                        month_plan_id=month_plan.id,
+                        trip_date=trip_date,
+                        customer_id=None,
+                        start_address="",
+                        end_address="",
+                        distance_km=distance_km,
+                        generated=True,
+                        is_private=True,
+                        note="Sukromna jazda",
+                    )
+                )
+
     for trip in generated:
         db.add(trip)
     db.commit()
-    generated_km = round(sum(t.distance_km for t in generated), 1)
+    generated_km = round(sum(t.distance_km for t in generated if not t.is_private), 1)
     return len(generated), generated_km

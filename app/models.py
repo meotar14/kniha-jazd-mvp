@@ -1,6 +1,6 @@
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -38,6 +38,8 @@ class Customer(Base):
     address: Mapped[str] = mapped_column(String(256), nullable=False)
     distance_from_base_km: Mapped[float] = mapped_column(Float, nullable=False)
     active_for_generation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class MonthPlan(Base):
@@ -88,6 +90,7 @@ class Trip(Base):
     end_address: Mapped[str] = mapped_column(String(256), nullable=False)
     distance_km: Mapped[float] = mapped_column(Float, nullable=False)
     generated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     note: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     month_plan: Mapped[MonthPlan] = relationship(back_populates="trips")

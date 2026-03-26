@@ -58,6 +58,15 @@ def run_lightweight_migrations() -> None:
         conn.execute(text("UPDATE month_plans SET private_km_ratio_percent = 10 WHERE private_km_ratio_percent IS NULL"))
         conn.execute(text("ALTER TABLE month_plans ALTER COLUMN private_km_ratio_percent SET NOT NULL"))
         conn.execute(text("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS default_driver_id INTEGER"))
+        conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE"))
+        conn.execute(text("UPDATE trips SET is_private = FALSE WHERE is_private IS NULL"))
+        conn.execute(text("ALTER TABLE trips ALTER COLUMN is_private SET NOT NULL"))
+        conn.execute(text("ALTER TABLE customers ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
+        conn.execute(text("UPDATE customers SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+        conn.execute(text("ALTER TABLE customers ALTER COLUMN created_at SET NOT NULL"))
+        conn.execute(text("ALTER TABLE customers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
+        conn.execute(text("UPDATE customers SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
+        conn.execute(text("ALTER TABLE customers ALTER COLUMN updated_at SET NOT NULL"))
 
 
 def ensure_settings_row(db: Session) -> models.AppSettings:
@@ -201,6 +210,8 @@ def export_backup_json(db: Session = Depends(get_db)) -> Response:
                 "address": c.address,
                 "distance_from_base_km": c.distance_from_base_km,
                 "active_for_generation": c.active_for_generation,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
             }
             for c in db.query(models.Customer).order_by(models.Customer.id.asc()).all()
         ],
@@ -230,6 +241,7 @@ def export_backup_json(db: Session = Depends(get_db)) -> Response:
                 "end_address": t.end_address,
                 "distance_km": t.distance_km,
                 "generated": t.generated,
+                "is_private": t.is_private,
                 "note": t.note,
             }
             for t in db.query(models.Trip).order_by(models.Trip.id.asc()).all()
@@ -316,6 +328,8 @@ async def import_backup_json(
                     address=c["address"],
                     distance_from_base_km=float(c["distance_from_base_km"]),
                     active_for_generation=bool(c.get("active_for_generation", True)),
+                    created_at=datetime.fromisoformat(c["created_at"]) if c.get("created_at") else datetime.utcnow(),
+                    updated_at=datetime.fromisoformat(c["updated_at"]) if c.get("updated_at") else datetime.utcnow(),
                 )
             )
         for p in payload["month_plans"]:
@@ -345,6 +359,7 @@ async def import_backup_json(
                     end_address=t["end_address"],
                     distance_km=float(t["distance_km"]),
                     generated=bool(t.get("generated", False)),
+                    is_private=bool(t.get("is_private", False)),
                     note=t.get("note"),
                 )
             )
@@ -443,12 +458,14 @@ def serialize_customer(customer: models.Customer) -> dict:
         "address": customer.address,
         "distance_from_base_km": customer.distance_from_base_km,
         "active_for_generation": customer.active_for_generation,
+        "created_at": customer.created_at.isoformat() if customer.created_at else None,
+        "updated_at": customer.updated_at.isoformat() if customer.updated_at else None,
     }
 
 
 def serialize_month_plan(month_plan: models.MonthPlan) -> dict:
     month_km = round(sum(t.distance_km for t in month_plan.trips), 1)
-    hidden_private_km = generator.plan_private_km(month_plan)
+    private_km = round(sum(t.distance_km for t in month_plan.trips if t.is_private), 1)
     service_target_km = generator.plan_service_target_km(month_plan)
     return {
         "id": month_plan.id,
@@ -466,7 +483,7 @@ def serialize_month_plan(month_plan: models.MonthPlan) -> dict:
         "end_odometer_km": month_plan.end_odometer_km,
         "private_km_enabled": month_plan.private_km_enabled,
         "private_km_ratio_percent": month_plan.private_km_ratio_percent,
-        "hidden_private_km": hidden_private_km,
+        "hidden_private_km": private_km,
         "service_target_km": service_target_km,
     }
 
@@ -500,6 +517,7 @@ def serialize_trip(trip: models.Trip) -> dict:
         "end_address": trip.end_address,
         "distance_km": trip.distance_km,
         "generated": trip.generated,
+        "is_private": trip.is_private,
         "note": trip.note,
     }
 
@@ -529,6 +547,8 @@ def serialize_settings(row: models.AppSettings) -> dict:
 
 
 def trip_purpose_label(trip: models.Trip) -> str:
+    if trip.is_private:
+        return "Sukromna jazda"
     if trip.note:
         note = trip.note.strip()
         normalized_note = note.lower()
@@ -548,35 +568,18 @@ def format_date_sk(date_iso: str) -> str:
     return f"{parts[2]}.{parts[1]}.{parts[0]}"
 
 
-def distribute_hidden_private_km_across_trips(trips: list[models.Trip], hidden_private_km: float) -> list[float]:
-    if not trips or hidden_private_km <= 0:
-        return [0.0 for _ in trips]
-    total_tenths = max(0, int(round(hidden_private_km * 10)))
-    slots = len(trips)
-    base_units, remainder = divmod(total_tenths, slots)
-    shares: list[float] = []
-    for index in range(slots):
-        units = base_units + (1 if index < remainder else 0)
-        shares.append(round(units / 10.0, 1))
-    return shares
-
-
 def build_trip_odometer_rows(month_plan: models.MonthPlan, trips: list[models.Trip]) -> list[dict]:
     rows: list[dict] = []
-    hidden_private_km = generator.plan_private_km(month_plan)
-    private_shares = distribute_hidden_private_km_across_trips(trips, hidden_private_km)
     odometer = float(month_plan.start_odometer_km)
-    for index, trip in enumerate(trips):
+    for trip in sorted(trips, key=lambda t: (t.trip_date, t.id)):
         start_km = round(odometer, 1)
         end_km = round(start_km + trip.distance_km, 1)
-        private_after_km = private_shares[index] if index < len(private_shares) else 0.0
-        odometer = round(end_km + private_after_km, 1)
+        odometer = end_km
         rows.append(
             {
                 "trip": trip,
                 "odometer_start_km": start_km,
                 "odometer_end_km": end_km,
-                "private_after_km": private_after_km,
             }
         )
     return rows
@@ -925,8 +928,19 @@ def create_customer(payload: schemas.CustomerCreate, db: Session = Depends(get_d
 
 
 @app.get("/customers")
-def list_customers(db: Session = Depends(get_db)) -> list[dict]:
-    rows = db.query(models.Customer).order_by(models.Customer.id.asc()).all()
+def list_customers(
+    sort_by: Literal["name", "distance", "created_at", "updated_at"] = "name",
+    sort_dir: Literal["asc", "desc"] = "asc",
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    sort_column = {
+        "name": models.Customer.name,
+        "distance": models.Customer.distance_from_base_km,
+        "created_at": models.Customer.created_at,
+        "updated_at": models.Customer.updated_at,
+    }[sort_by]
+    order_expr = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+    rows = db.query(models.Customer).order_by(order_expr, models.Customer.id.asc()).all()
     return [serialize_customer(r) for r in rows]
 
 
@@ -1250,7 +1264,7 @@ def list_all_trips(
     month: int | None = None,
     vehicle_id: int | None = None,
     driver_id: int | None = None,
-    mode: Literal["all", "manual", "generated"] = "all",
+    mode: Literal["all", "manual", "generated", "private"] = "all",
     db: Session = Depends(get_db),
 ) -> list[dict]:
     query = (
@@ -1269,9 +1283,11 @@ def list_all_trips(
     if driver_id is not None:
         query = query.filter(models.MonthPlan.driver_id == driver_id)
     if mode == "manual":
-        query = query.filter(models.Trip.generated.is_(False))
+        query = query.filter(models.Trip.generated.is_(False), models.Trip.is_private.is_(False))
     elif mode == "generated":
         query = query.filter(models.Trip.generated.is_(True))
+    elif mode == "private":
+        query = query.filter(models.Trip.is_private.is_(True))
 
     rows = query.order_by(models.Trip.trip_date.asc(), models.Trip.id.asc()).all()
     return [serialize_trip(r) for r in rows]
@@ -1411,9 +1427,9 @@ def generate_month_trips(
 
     all_trips = db.query(models.Trip).filter(models.Trip.month_plan_id == month_plan_id).all()
     target_km = month_plan.end_odometer_km - month_plan.start_odometer_km
-    hidden_private_km = generator.plan_private_km(month_plan)
+    hidden_private_km = round(sum(t.distance_km for t in all_trips if t.is_private), 1)
     service_target_km = generator.plan_service_target_km(month_plan)
-    recorded_service_km = round(sum(t.distance_km for t in all_trips), 1)
+    recorded_service_km = round(sum(t.distance_km for t in all_trips if not t.is_private), 1)
     total_km = round(recorded_service_km + hidden_private_km, 1)
     total_refueled = round(sum(r.liters for r in month_plan.refuels), 1)
     estimated_fuel = round((target_km * month_plan.vehicle.expected_consumption_l_per_100km) / 100.0, 1)
@@ -1448,9 +1464,9 @@ def get_month_report(month_plan_id: int, db: Session = Depends(get_db)) -> schem
         raise HTTPException(status_code=404, detail="month plan not found")
 
     all_trips = db.query(models.Trip).filter(models.Trip.month_plan_id == month_plan_id).all()
-    recorded_service_km = round(sum(t.distance_km for t in all_trips), 1)
+    recorded_service_km = round(sum(t.distance_km for t in all_trips if not t.is_private), 1)
     target_km = month_plan.end_odometer_km - month_plan.start_odometer_km
-    hidden_private_km = generator.plan_private_km(month_plan)
+    hidden_private_km = round(sum(t.distance_km for t in all_trips if t.is_private), 1)
     service_target_km = generator.plan_service_target_km(month_plan)
     total_km = round(recorded_service_km + hidden_private_km, 1)
     refueled_l = round(sum(r.liters for r in month_plan.refuels), 1)
@@ -1475,7 +1491,7 @@ def get_month_report(month_plan_id: int, db: Session = Depends(get_db)) -> schem
 @app.get("/month-plans/{month_plan_id}/trips.csv")
 def export_trips_csv(
     month_plan_id: int,
-    mode: Literal["all", "manual", "generated"] = "all",
+    mode: Literal["all", "manual", "generated", "private"] = "all",
     db: Session = Depends(get_db),
 ) -> Response:
     month_plan = (
@@ -1489,9 +1505,11 @@ def export_trips_csv(
 
     query = db.query(models.Trip).options(joinedload(models.Trip.customer)).filter(models.Trip.month_plan_id == month_plan_id)
     if mode == "manual":
-        query = query.filter(models.Trip.generated.is_(False))
+        query = query.filter(models.Trip.generated.is_(False), models.Trip.is_private.is_(False))
     elif mode == "generated":
         query = query.filter(models.Trip.generated.is_(True))
+    elif mode == "private":
+        query = query.filter(models.Trip.is_private.is_(True))
     rows = query.order_by(models.Trip.trip_date.asc(), models.Trip.id.asc()).all()
     export_rows = build_export_rows_for_month_plan(month_plan, rows)
     csv_content = render_trip_export_csv(export_rows)
@@ -1507,7 +1525,7 @@ def export_trips_csv(
 @app.get("/month-plans/{month_plan_id}/trips.xlsx")
 def export_trips_xlsx(
     month_plan_id: int,
-    mode: Literal["all", "manual", "generated"] = "all",
+    mode: Literal["all", "manual", "generated", "private"] = "all",
     db: Session = Depends(get_db),
 ) -> Response:
     target_month_plan = (
@@ -1534,9 +1552,11 @@ def export_trips_xlsx(
     for plan in year_plans:
         query = db.query(models.Trip).options(joinedload(models.Trip.customer)).filter(models.Trip.month_plan_id == plan.id)
         if mode == "manual":
-            query = query.filter(models.Trip.generated.is_(False))
+            query = query.filter(models.Trip.generated.is_(False), models.Trip.is_private.is_(False))
         elif mode == "generated":
             query = query.filter(models.Trip.generated.is_(True))
+        elif mode == "private":
+            query = query.filter(models.Trip.is_private.is_(True))
         rows = query.order_by(models.Trip.trip_date.asc(), models.Trip.id.asc()).all()
         sheet = _resolve_template_sheet(workbook, plan.month, plan.year)
         _fill_template_month_sheet(sheet, plan, rows, settings_row.company_name)
@@ -1559,7 +1579,7 @@ def query_filtered_trips_for_export(
     month: int | None = None,
     vehicle_id: int | None = None,
     driver_id: int | None = None,
-    mode: Literal["all", "manual", "generated"] = "all",
+    mode: Literal["all", "manual", "generated", "private"] = "all",
     db: Session | None = None,
 ) -> list[models.Trip]:
     if db is None:
@@ -1584,9 +1604,11 @@ def query_filtered_trips_for_export(
     if driver_id is not None:
         query = query.filter(models.MonthPlan.driver_id == driver_id)
     if mode == "manual":
-        query = query.filter(models.Trip.generated.is_(False))
+        query = query.filter(models.Trip.generated.is_(False), models.Trip.is_private.is_(False))
     elif mode == "generated":
         query = query.filter(models.Trip.generated.is_(True))
+    elif mode == "private":
+        query = query.filter(models.Trip.is_private.is_(True))
 
     return query.order_by(models.MonthPlan.year.asc(), models.MonthPlan.month.asc(), models.Trip.trip_date.asc(), models.Trip.id.asc()).all()
 
@@ -1598,7 +1620,7 @@ def export_filtered_trips_csv(
     month: int | None = None,
     vehicle_id: int | None = None,
     driver_id: int | None = None,
-    mode: Literal["all", "manual", "generated"] = "all",
+    mode: Literal["all", "manual", "generated", "private"] = "all",
     db: Session = Depends(get_db),
 ) -> Response:
     trips = query_filtered_trips_for_export(
@@ -1631,7 +1653,7 @@ def export_filtered_trips_xlsx(
     month: int | None = None,
     vehicle_id: int | None = None,
     driver_id: int | None = None,
-    mode: Literal["all", "manual", "generated"] = "all",
+    mode: Literal["all", "manual", "generated", "private"] = "all",
     db: Session = Depends(get_db),
 ) -> Response:
     trips = query_filtered_trips_for_export(
@@ -1734,9 +1756,9 @@ def export_report_csv(month_plan_id: int, db: Session = Depends(get_db)) -> Resp
         raise HTTPException(status_code=404, detail="month plan not found")
 
     all_trips = db.query(models.Trip).filter(models.Trip.month_plan_id == month_plan_id).all()
-    recorded_service_km = round(sum(t.distance_km for t in all_trips), 1)
+    recorded_service_km = round(sum(t.distance_km for t in all_trips if not t.is_private), 1)
     target_km = month_plan.end_odometer_km - month_plan.start_odometer_km
-    hidden_private_km = generator.plan_private_km(month_plan)
+    hidden_private_km = round(sum(t.distance_km for t in all_trips if t.is_private), 1)
     service_target_km = generator.plan_service_target_km(month_plan)
     total_km = round(recorded_service_km + hidden_private_km, 1)
     refueled_l = round(sum(r.liters for r in month_plan.refuels), 1)
