@@ -195,7 +195,7 @@ def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[i
 
     private_remaining = round(target_private_km - existing_private_km, 1)
     if private_remaining > 0:
-        source_dates = [trip.trip_date for trip in sorted(month_plan.trips + generated, key=lambda t: (t.trip_date, t.id or 0)) if not t.is_private]
+        source_dates = [trip.trip_date for trip in sorted(month_plan.trips + generated, key=lambda t: (t.trip_date, t.id or 0)) if not trip.is_private]
         private_dates = source_dates if source_dates else day_pool
         if private_dates:
             total_tenths = max(0, int(round(private_remaining * 10)))
