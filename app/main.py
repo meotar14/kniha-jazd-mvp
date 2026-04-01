@@ -505,6 +505,8 @@ def serialize_trip(trip: models.Trip) -> dict:
     month_name = None
     if trip.month_plan:
         month_name = MONTH_NAMES_SK.get(trip.month_plan.month, str(trip.month_plan.month))
+    start_address = "" if trip.is_private else trip.start_address
+    end_address = "" if trip.is_private else trip.end_address
     return {
         "id": trip.id,
         "month_plan_id": trip.month_plan_id,
@@ -513,8 +515,8 @@ def serialize_trip(trip: models.Trip) -> dict:
         "trip_end_date": trip.trip_end_date.isoformat() if trip.trip_end_date else None,
         "customer_id": trip.customer_id,
         "customer_name": trip.customer.name if trip.customer else None,
-        "start_address": trip.start_address,
-        "end_address": trip.end_address,
+        "start_address": start_address,
+        "end_address": end_address,
         "distance_km": trip.distance_km,
         "generated": trip.generated,
         "is_private": trip.is_private,
@@ -715,8 +717,8 @@ def _fill_template_month_sheet(
 
         sheet[f"A{row_no}"] = index
         sheet[f"B{row_no}"] = format_date_sk(trip.trip_date.isoformat())
-        sheet[f"C{row_no}"] = trip.start_address
-        sheet[f"D{row_no}"] = trip.end_address
+        sheet[f"C{row_no}"] = "" if trip.is_private else trip.start_address
+        sheet[f"D{row_no}"] = "" if trip.is_private else trip.end_address
         sheet[f"E{row_no}"] = ""
         sheet[f"F{row_no}"] = ""
         sheet[f"G{row_no}"] = start_km
@@ -763,8 +765,8 @@ def build_export_rows_for_month_plan(month_plan: models.MonthPlan, trips: list[m
                 "odometer_start_km": trip_row["odometer_start_km"],
                 "odometer_end_km": trip_row["odometer_end_km"],
                 "purpose": trip_purpose_label(trip),
-                "start_address": trip.start_address,
-                "end_address": trip.end_address,
+                "start_address": "" if trip.is_private else trip.start_address,
+                "end_address": "" if trip.is_private else trip.end_address,
                 "distance_km": trip.distance_km,
             }
         )
@@ -788,8 +790,8 @@ def build_export_rows_for_mixed_trips(trips: list[models.Trip]) -> list[dict]:
                     "odometer_start_km": trip_row["odometer_start_km"],
                     "odometer_end_km": trip_row["odometer_end_km"],
                     "purpose": trip_purpose_label(trip),
-                    "start_address": trip.start_address,
-                    "end_address": trip.end_address,
+                    "start_address": "" if trip.is_private else trip.start_address,
+                    "end_address": "" if trip.is_private else trip.end_address,
                     "distance_km": trip.distance_km,
                 }
             )
