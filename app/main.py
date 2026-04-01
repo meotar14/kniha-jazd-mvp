@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 import httpx
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 from openpyxl import Workbook, load_workbook
 from sqlalchemy import text
@@ -35,6 +35,7 @@ MONTH_NAMES_SK = {
     11: "november",
     12: "december",
 }
+BACKUP_SECTIONS = ("settings", "drivers", "vehicles", "customers", "month_plans", "trips", "refuels")
 
 
 def run_lightweight_migrations() -> None:
@@ -181,14 +182,32 @@ def _reset_postgres_sequences(db: Session) -> None:
         )
 
 
-@app.get("/backup/export")
-def export_backup_json(db: Session = Depends(get_db)) -> Response:
-    settings_row = ensure_settings_row(db)
-    payload = {
+def _normalize_backup_sections(values: list[str] | None) -> list[str]:
+    if not values:
+        return list(BACKUP_SECTIONS)
+    sections: list[str] = []
+    for raw in values:
+        for part in str(raw).split(","):
+            section = part.strip()
+            if section and section in BACKUP_SECTIONS and section not in sections:
+                sections.append(section)
+    return sections or list(BACKUP_SECTIONS)
+
+
+def _normalize_customer_key(name: str, address: str) -> tuple[str, str]:
+    return (name.strip().casefold(), address.strip().casefold())
+
+
+def _build_backup_payload(db: Session, sections: list[str]) -> dict:
+    payload: dict = {
         "app": "kniha-jazd-mvp",
         "exported_at": datetime.utcnow().isoformat() + "Z",
-        "settings": serialize_settings(settings_row),
-        "vehicles": [
+        "meta": {"sections": sections, "app_version": APP_VERSION},
+    }
+    if "settings" in sections:
+        payload["settings"] = serialize_settings(ensure_settings_row(db))
+    if "vehicles" in sections:
+        payload["vehicles"] = [
             {
                 "id": v.id,
                 "plate_number": v.plate_number,
@@ -198,12 +217,14 @@ def export_backup_json(db: Session = Depends(get_db)) -> Response:
                 "default_driver_id": v.default_driver_id,
             }
             for v in db.query(models.Vehicle).order_by(models.Vehicle.id.asc()).all()
-        ],
-        "drivers": [
+        ]
+    if "drivers" in sections:
+        payload["drivers"] = [
             {"id": d.id, "full_name": d.full_name, "license_number": d.license_number}
             for d in db.query(models.Driver).order_by(models.Driver.id.asc()).all()
-        ],
-        "customers": [
+        ]
+    if "customers" in sections:
+        payload["customers"] = [
             {
                 "id": c.id,
                 "name": c.name,
@@ -214,8 +235,9 @@ def export_backup_json(db: Session = Depends(get_db)) -> Response:
                 "updated_at": c.updated_at.isoformat() if c.updated_at else None,
             }
             for c in db.query(models.Customer).order_by(models.Customer.id.asc()).all()
-        ],
-        "month_plans": [
+        ]
+    if "month_plans" in sections:
+        payload["month_plans"] = [
             {
                 "id": p.id,
                 "vehicle_id": p.vehicle_id,
@@ -229,8 +251,9 @@ def export_backup_json(db: Session = Depends(get_db)) -> Response:
                 "private_km_ratio_percent": p.private_km_ratio_percent,
             }
             for p in db.query(models.MonthPlan).order_by(models.MonthPlan.id.asc()).all()
-        ],
-        "trips": [
+        ]
+    if "trips" in sections:
+        payload["trips"] = [
             {
                 "id": t.id,
                 "month_plan_id": t.month_plan_id,
@@ -245,8 +268,9 @@ def export_backup_json(db: Session = Depends(get_db)) -> Response:
                 "note": t.note,
             }
             for t in db.query(models.Trip).order_by(models.Trip.id.asc()).all()
-        ],
-        "refuels": [
+        ]
+    if "refuels" in sections:
+        payload["refuels"] = [
             {
                 "id": r.id,
                 "month_plan_id": r.month_plan_id,
@@ -258,8 +282,317 @@ def export_backup_json(db: Session = Depends(get_db)) -> Response:
                 "is_foreign": r.is_foreign,
             }
             for r in db.query(models.Refuel).order_by(models.Refuel.id.asc()).all()
-        ],
+        ]
+    return payload
+
+
+def _full_restore_backup(db: Session, payload: dict) -> dict:
+    db.query(models.Refuel).delete()
+    db.query(models.Trip).delete()
+    db.query(models.MonthPlan).delete()
+    db.query(models.Customer).delete()
+    db.query(models.Driver).delete()
+    db.query(models.Vehicle).delete()
+    db.query(models.AppSettings).delete()
+
+    s = payload.get("settings") or {}
+    db.add(
+        models.AppSettings(
+            id=1,
+            company_name=(s.get("company_name") or "").strip(),
+            company_ico=(s.get("company_ico") or "").strip(),
+            company_logo_url=s.get("company_logo_url"),
+            company_base_address=s.get("company_base_address"),
+        )
+    )
+
+    for d in payload.get("drivers", []):
+        db.add(models.Driver(id=int(d["id"]), full_name=d["full_name"], license_number=d["license_number"]))
+    for v in payload.get("vehicles", []):
+        db.add(
+            models.Vehicle(
+                id=int(v["id"]),
+                plate_number=v["plate_number"],
+                model=v["model"],
+                expected_consumption_l_per_100km=float(v["expected_consumption_l_per_100km"]),
+                tank_capacity_l=float(v.get("tank_capacity_l", 50)),
+                default_driver_id=int(v["default_driver_id"]) if v.get("default_driver_id") else None,
+            )
+        )
+    for c in payload.get("customers", []):
+        db.add(
+            models.Customer(
+                id=int(c["id"]),
+                name=c["name"],
+                address=c["address"],
+                distance_from_base_km=float(c["distance_from_base_km"]),
+                active_for_generation=bool(c.get("active_for_generation", True)),
+                created_at=datetime.fromisoformat(c["created_at"]) if c.get("created_at") else datetime.utcnow(),
+                updated_at=datetime.fromisoformat(c["updated_at"]) if c.get("updated_at") else datetime.utcnow(),
+            )
+        )
+    for p in payload.get("month_plans", []):
+        db.add(
+            models.MonthPlan(
+                id=int(p["id"]),
+                vehicle_id=int(p["vehicle_id"]),
+                driver_id=int(p["driver_id"]),
+                year=int(p["year"]),
+                month=int(p["month"]),
+                base_address=p["base_address"],
+                start_odometer_km=int(p["start_odometer_km"]),
+                end_odometer_km=int(p["end_odometer_km"]),
+                private_km_enabled=bool(p.get("private_km_enabled", False)),
+                private_km_ratio_percent=float(p.get("private_km_ratio_percent", 10.0)),
+            )
+        )
+    for t in payload.get("trips", []):
+        db.add(
+            models.Trip(
+                id=int(t["id"]),
+                month_plan_id=int(t["month_plan_id"]),
+                trip_date=_parse_backup_date(t.get("trip_date")),
+                trip_end_date=_parse_backup_date(t.get("trip_end_date")),
+                customer_id=int(t["customer_id"]) if t.get("customer_id") is not None else None,
+                start_address=t["start_address"],
+                end_address=t["end_address"],
+                distance_km=float(t["distance_km"]),
+                generated=bool(t.get("generated", False)),
+                is_private=bool(t.get("is_private", False)),
+                note=t.get("note"),
+            )
+        )
+    for r in payload.get("refuels", []):
+        db.add(
+            models.Refuel(
+                id=int(r["id"]),
+                month_plan_id=int(r["month_plan_id"]),
+                refuel_date=_parse_backup_date(r.get("refuel_date")),
+                liters=float(r["liters"]),
+                odometer_km=int(r["odometer_km"]) if r.get("odometer_km") is not None else None,
+                total_price_eur=float(r["total_price_eur"]) if r.get("total_price_eur") is not None else None,
+                location_city=r.get("location_city"),
+                is_foreign=bool(r.get("is_foreign", False)),
+            )
+        )
+    db.flush()
+    _reset_postgres_sequences(db)
+    return {
+        "mode": "replace_all",
+        "vehicles": len(payload.get("vehicles", [])),
+        "drivers": len(payload.get("drivers", [])),
+        "customers": len(payload.get("customers", [])),
+        "month_plans": len(payload.get("month_plans", [])),
+        "trips": len(payload.get("trips", [])),
+        "refuels": len(payload.get("refuels", [])),
     }
+
+
+def _merge_backup_sections(db: Session, payload: dict, sections: list[str], replace_existing: bool) -> dict:
+    driver_id_map: dict[int, int] = {}
+    vehicle_id_map: dict[int, int] = {}
+    customer_id_map: dict[int, int] = {}
+    month_plan_id_map: dict[int, int] = {}
+
+    if "settings" in sections:
+        s = payload.get("settings") or {}
+        row = ensure_settings_row(db)
+        row.company_name = (s.get("company_name") or "").strip()
+        row.company_ico = (s.get("company_ico") or "").strip()
+        row.company_logo_url = s.get("company_logo_url")
+        row.company_base_address = s.get("company_base_address")
+
+    if "drivers" in sections:
+        existing_by_license = {d.license_number: d for d in db.query(models.Driver).all()}
+        for d in payload.get("drivers", []):
+            row = existing_by_license.get(d["license_number"])
+            if not row:
+                row = models.Driver(full_name=d["full_name"], license_number=d["license_number"])
+                db.add(row)
+                db.flush()
+                existing_by_license[row.license_number] = row
+            else:
+                row.full_name = d["full_name"]
+            driver_id_map[int(d["id"])] = row.id
+    else:
+        driver_id_map = {d.id: d.id for d in db.query(models.Driver).all()}
+
+    if "vehicles" in sections:
+        existing_by_plate = {v.plate_number: v for v in db.query(models.Vehicle).all()}
+        for v in payload.get("vehicles", []):
+            row = existing_by_plate.get(v["plate_number"])
+            if not row:
+                row = models.Vehicle(plate_number=v["plate_number"], model=v["model"], expected_consumption_l_per_100km=float(v["expected_consumption_l_per_100km"]), tank_capacity_l=float(v.get("tank_capacity_l", 50)))
+                db.add(row)
+                db.flush()
+                existing_by_plate[row.plate_number] = row
+            row.model = v["model"]
+            row.expected_consumption_l_per_100km = float(v["expected_consumption_l_per_100km"])
+            row.tank_capacity_l = float(v.get("tank_capacity_l", 50))
+            default_driver_id = int(v["default_driver_id"]) if v.get("default_driver_id") else None
+            row.default_driver_id = driver_id_map.get(default_driver_id) if default_driver_id else None
+            vehicle_id_map[int(v["id"])] = row.id
+    else:
+        vehicle_id_map = {v.id: v.id for v in db.query(models.Vehicle).all()}
+
+    if "customers" in sections:
+        existing_customers = db.query(models.Customer).all()
+        existing_by_key = {_normalize_customer_key(c.name, c.address): c for c in existing_customers}
+        for c in payload.get("customers", []):
+            key = _normalize_customer_key(c["name"], c["address"])
+            row = existing_by_key.get(key)
+            if not row:
+                row = models.Customer(
+                    name=c["name"],
+                    address=c["address"],
+                    distance_from_base_km=float(c["distance_from_base_km"]),
+                    active_for_generation=bool(c.get("active_for_generation", True)),
+                )
+                db.add(row)
+                db.flush()
+                existing_by_key[key] = row
+            row.distance_from_base_km = float(c["distance_from_base_km"])
+            row.active_for_generation = bool(c.get("active_for_generation", True))
+            row.created_at = datetime.fromisoformat(c["created_at"]) if c.get("created_at") else row.created_at
+            row.updated_at = datetime.fromisoformat(c["updated_at"]) if c.get("updated_at") else datetime.utcnow()
+            customer_id_map[int(c["id"])] = row.id
+    else:
+        customer_id_map = {c.id: c.id for c in db.query(models.Customer).all()}
+
+    if "month_plans" in sections:
+        existing_plans = db.query(models.MonthPlan).all()
+        existing_by_key = {(p.vehicle_id, p.year, p.month): p for p in existing_plans}
+        for p in payload.get("month_plans", []):
+            vehicle_id = vehicle_id_map.get(int(p["vehicle_id"]))
+            driver_id = driver_id_map.get(int(p["driver_id"]))
+            if not vehicle_id or not driver_id:
+                continue
+            key = (vehicle_id, int(p["year"]), int(p["month"]))
+            row = existing_by_key.get(key)
+            if not row:
+                row = models.MonthPlan(
+                    vehicle_id=vehicle_id,
+                    driver_id=driver_id,
+                    year=int(p["year"]),
+                    month=int(p["month"]),
+                    base_address=p["base_address"],
+                    start_odometer_km=int(p["start_odometer_km"]),
+                    end_odometer_km=int(p["end_odometer_km"]),
+                    private_km_enabled=bool(p.get("private_km_enabled", False)),
+                    private_km_ratio_percent=float(p.get("private_km_ratio_percent", 10.0)),
+                )
+                db.add(row)
+                db.flush()
+                existing_by_key[key] = row
+            row.driver_id = driver_id
+            row.base_address = p["base_address"]
+            row.start_odometer_km = int(p["start_odometer_km"])
+            row.end_odometer_km = int(p["end_odometer_km"])
+            row.private_km_enabled = bool(p.get("private_km_enabled", False))
+            row.private_km_ratio_percent = float(p.get("private_km_ratio_percent", 10.0))
+            month_plan_id_map[int(p["id"])] = row.id
+    else:
+        month_plan_id_map = {p.id: p.id for p in db.query(models.MonthPlan).all()}
+
+    if "refuels" in sections and replace_existing:
+        imported_plan_ids = [month_plan_id_map.get(int(r["month_plan_id"])) for r in payload.get("refuels", [])]
+        imported_plan_ids = [plan_id for plan_id in imported_plan_ids if plan_id]
+        if imported_plan_ids:
+            db.query(models.Refuel).filter(models.Refuel.month_plan_id.in_(imported_plan_ids)).delete(synchronize_session=False)
+
+    if "trips" in sections and replace_existing:
+        imported_plan_ids = [month_plan_id_map.get(int(t["month_plan_id"])) for t in payload.get("trips", [])]
+        imported_plan_ids = [plan_id for plan_id in imported_plan_ids if plan_id]
+        if imported_plan_ids:
+            db.query(models.Trip).filter(models.Trip.month_plan_id.in_(imported_plan_ids)).delete(synchronize_session=False)
+
+    imported_trips = 0
+    if "trips" in sections:
+        for t in payload.get("trips", []):
+            plan_id = month_plan_id_map.get(int(t["month_plan_id"]))
+            if not plan_id:
+                continue
+            customer_id = customer_id_map.get(int(t["customer_id"])) if t.get("customer_id") is not None else None
+            trip_date = _parse_backup_date(t.get("trip_date"))
+            trip_end_date = _parse_backup_date(t.get("trip_end_date"))
+            query = db.query(models.Trip).filter(
+                models.Trip.month_plan_id == plan_id,
+                models.Trip.trip_date == trip_date,
+                models.Trip.trip_end_date == trip_end_date,
+                models.Trip.distance_km == float(t["distance_km"]),
+                models.Trip.generated == bool(t.get("generated", False)),
+                models.Trip.is_private == bool(t.get("is_private", False)),
+                models.Trip.note == t.get("note"),
+            )
+            row = None if replace_existing else query.first()
+            if not row:
+                row = models.Trip(
+                    month_plan_id=plan_id,
+                    trip_date=trip_date,
+                    trip_end_date=trip_end_date,
+                    customer_id=customer_id,
+                    start_address=t["start_address"],
+                    end_address=t["end_address"],
+                    distance_km=float(t["distance_km"]),
+                    generated=bool(t.get("generated", False)),
+                    is_private=bool(t.get("is_private", False)),
+                    note=t.get("note"),
+                )
+                db.add(row)
+            else:
+                row.customer_id = customer_id
+                row.start_address = t["start_address"]
+                row.end_address = t["end_address"]
+            imported_trips += 1
+
+    imported_refuels = 0
+    if "refuels" in sections:
+        for r in payload.get("refuels", []):
+            plan_id = month_plan_id_map.get(int(r["month_plan_id"]))
+            if not plan_id:
+                continue
+            refuel_date = _parse_backup_date(r.get("refuel_date"))
+            query = db.query(models.Refuel).filter(
+                models.Refuel.month_plan_id == plan_id,
+                models.Refuel.refuel_date == refuel_date,
+                models.Refuel.liters == float(r["liters"]),
+                models.Refuel.odometer_km == (int(r["odometer_km"]) if r.get("odometer_km") is not None else None),
+            )
+            row = None if replace_existing else query.first()
+            if not row:
+                row = models.Refuel(
+                    month_plan_id=plan_id,
+                    refuel_date=refuel_date,
+                    liters=float(r["liters"]),
+                    odometer_km=int(r["odometer_km"]) if r.get("odometer_km") is not None else None,
+                    total_price_eur=float(r["total_price_eur"]) if r.get("total_price_eur") is not None else None,
+                    location_city=r.get("location_city"),
+                    is_foreign=bool(r.get("is_foreign", False)),
+                )
+                db.add(row)
+            else:
+                row.total_price_eur = float(r["total_price_eur"]) if r.get("total_price_eur") is not None else None
+                row.location_city = r.get("location_city")
+                row.is_foreign = bool(r.get("is_foreign", False))
+            imported_refuels += 1
+
+    db.flush()
+    _reset_postgres_sequences(db)
+    return {
+        "mode": "replace_selected" if replace_existing else "merge",
+        "vehicles": len(payload.get("vehicles", [])) if "vehicles" in sections else 0,
+        "drivers": len(payload.get("drivers", [])) if "drivers" in sections else 0,
+        "customers": len(payload.get("customers", [])) if "customers" in sections else 0,
+        "month_plans": len(payload.get("month_plans", [])) if "month_plans" in sections else 0,
+        "trips": imported_trips,
+        "refuels": imported_refuels,
+        "sections": sections,
+    }
+
+
+@app.get("/backup/export")
+def export_backup_json(sections: list[str] = Query(default=[]), db: Session = Depends(get_db)) -> Response:
+    payload = _build_backup_payload(db, _normalize_backup_sections(sections))
     backup_name = f"kniha_jazd_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
     return Response(
         content=json.dumps(payload, ensure_ascii=False, indent=2),
@@ -272,6 +605,7 @@ def export_backup_json(db: Session = Depends(get_db)) -> Response:
 async def import_backup_json(
     file: UploadFile = File(...),
     replace_existing: bool = Form(True),
+    sections: list[str] = Form(default=[]),
     db: Session = Depends(get_db),
 ) -> dict:
     if not file.filename.lower().endswith(".json"):
@@ -281,104 +615,14 @@ async def import_backup_json(
     except Exception as exc:
         raise HTTPException(status_code=400, detail="invalid backup json") from exc
 
-    required_keys = {"settings", "vehicles", "drivers", "customers", "month_plans", "trips", "refuels"}
-    if not required_keys.issubset(payload.keys()):
-        raise HTTPException(status_code=400, detail="backup json missing required sections")
-    if not replace_existing:
-        raise HTTPException(status_code=400, detail="replace_existing=false is not supported yet")
+    payload_sections = payload.get("meta", {}).get("sections")
+    selected_sections = _normalize_backup_sections(sections or payload_sections)
+    if not any(section in payload for section in selected_sections):
+        raise HTTPException(status_code=400, detail="backup json does not contain selected sections")
 
     try:
-        db.query(models.Refuel).delete()
-        db.query(models.Trip).delete()
-        db.query(models.MonthPlan).delete()
-        db.query(models.Customer).delete()
-        db.query(models.Driver).delete()
-        db.query(models.Vehicle).delete()
-        db.query(models.AppSettings).delete()
-
-        s = payload["settings"] or {}
-        db.add(
-            models.AppSettings(
-                id=1,
-                company_name=(s.get("company_name") or "").strip(),
-                company_ico=(s.get("company_ico") or "").strip(),
-                company_logo_url=s.get("company_logo_url"),
-                company_base_address=s.get("company_base_address"),
-            )
-        )
-
-        for d in payload["drivers"]:
-            db.add(models.Driver(id=int(d["id"]), full_name=d["full_name"], license_number=d["license_number"]))
-        for v in payload["vehicles"]:
-            db.add(
-                models.Vehicle(
-                    id=int(v["id"]),
-                    plate_number=v["plate_number"],
-                    model=v["model"],
-                    expected_consumption_l_per_100km=float(v["expected_consumption_l_per_100km"]),
-                    tank_capacity_l=float(v.get("tank_capacity_l", 50)),
-                    default_driver_id=int(v["default_driver_id"]) if v.get("default_driver_id") else None,
-                )
-            )
-        for c in payload["customers"]:
-            db.add(
-                models.Customer(
-                    id=int(c["id"]),
-                    name=c["name"],
-                    address=c["address"],
-                    distance_from_base_km=float(c["distance_from_base_km"]),
-                    active_for_generation=bool(c.get("active_for_generation", True)),
-                    created_at=datetime.fromisoformat(c["created_at"]) if c.get("created_at") else datetime.utcnow(),
-                    updated_at=datetime.fromisoformat(c["updated_at"]) if c.get("updated_at") else datetime.utcnow(),
-                )
-            )
-        for p in payload["month_plans"]:
-            db.add(
-                models.MonthPlan(
-                    id=int(p["id"]),
-                    vehicle_id=int(p["vehicle_id"]),
-                    driver_id=int(p["driver_id"]),
-                    year=int(p["year"]),
-                    month=int(p["month"]),
-                    base_address=p["base_address"],
-                    start_odometer_km=int(p["start_odometer_km"]),
-                    end_odometer_km=int(p["end_odometer_km"]),
-                    private_km_enabled=bool(p.get("private_km_enabled", False)),
-                    private_km_ratio_percent=float(p.get("private_km_ratio_percent", 10.0)),
-                )
-            )
-        for t in payload["trips"]:
-            db.add(
-                models.Trip(
-                    id=int(t["id"]),
-                    month_plan_id=int(t["month_plan_id"]),
-                    trip_date=_parse_backup_date(t.get("trip_date")),
-                    trip_end_date=_parse_backup_date(t.get("trip_end_date")),
-                    customer_id=int(t["customer_id"]) if t.get("customer_id") is not None else None,
-                    start_address=t["start_address"],
-                    end_address=t["end_address"],
-                    distance_km=float(t["distance_km"]),
-                    generated=bool(t.get("generated", False)),
-                    is_private=bool(t.get("is_private", False)),
-                    note=t.get("note"),
-                )
-            )
-        for r in payload["refuels"]:
-            db.add(
-                models.Refuel(
-                    id=int(r["id"]),
-                    month_plan_id=int(r["month_plan_id"]),
-                    refuel_date=_parse_backup_date(r.get("refuel_date")),
-                    liters=float(r["liters"]),
-                    odometer_km=int(r["odometer_km"]) if r.get("odometer_km") is not None else None,
-                    total_price_eur=float(r["total_price_eur"]) if r.get("total_price_eur") is not None else None,
-                    location_city=r.get("location_city"),
-                    is_foreign=bool(r.get("is_foreign", False)),
-                )
-            )
-
-        db.flush()
-        _reset_postgres_sequences(db)
+        is_full_restore = replace_existing and set(selected_sections) == set(BACKUP_SECTIONS)
+        result = _full_restore_backup(db, payload) if is_full_restore else _merge_backup_sections(db, payload, selected_sections, replace_existing)
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -386,12 +630,7 @@ async def import_backup_json(
 
     return {
         "imported": True,
-        "vehicles": len(payload["vehicles"]),
-        "drivers": len(payload["drivers"]),
-        "customers": len(payload["customers"]),
-        "month_plans": len(payload["month_plans"]),
-        "trips": len(payload["trips"]),
-        "refuels": len(payload["refuels"]),
+        **result,
     }
 
 

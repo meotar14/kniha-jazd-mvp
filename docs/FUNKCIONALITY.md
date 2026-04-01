@@ -170,7 +170,9 @@ Report je určený na kontrolu mesačného plánu.
 - vhodné pred aktualizáciou, migráciou alebo zásahom do databázy
 
 ### Import Zálohy
-- obnoví konfiguráciu aj dáta späť do aplikácie
+- vie obnoviť všetky sekcie naraz alebo len vybrané sekcie
+- pri úplnej obnove všetkých sekcií nahradí databázu stavom zo zálohy
+- pri čiastočnom importe alebo pri režime bez prepísania bezpečne doplní a aktualizuje vybrané sekcie
 - použiteľné pri presune medzi testovacím a ostrým prostredím
 - použiteľné aj pri obnove po poškodení alebo zmazaní databázy
 

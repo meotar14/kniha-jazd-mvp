@@ -104,6 +104,20 @@ Generátor:
 - negeneruje nezmyselné trasy
 - snaží sa držať dĺžku jazdy blízko reálnej vzdialenosti
 
+## 10. Záloha A Obnova
+
+V `Nastaveniach` si vieš zvoliť, ktoré sekcie chceš:
+- exportovať do JSON
+- importovať späť do aplikácie
+
+Možnosti importu:
+- `Úplná obnova vybraných sekcií`
+  Pri zapnutí a importe všetkých sekcií sa databáza obnoví presne zo zálohy.
+- bez zapnutia
+  Dáta sa len doplnia alebo aktualizujú bez mazania ostatných sekcií.
+
+Pri čiastočnom importe sa nevybrané sekcie nemenia.
+
 ## 7. Report
 
 Tlačidlo `Načítaj report` zobrazí:

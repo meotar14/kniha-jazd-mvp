@@ -352,10 +352,30 @@
           </div>
           <div class="card">
             <h2>Záloha a obnova</h2>
-            <button onclick="downloadBackupJson()">Exportovať konfiguráciu + dáta (JSON)</button>
+            <p class="muted">Vyber, ktoré sekcie chceš exportovať alebo obnoviť.</p>
+            <div class="toolbar" id="backup_sections_export">
+              <label><input type="checkbox" value="settings" checked style="width:auto;" /> Nastavenia</label>
+              <label><input type="checkbox" value="drivers" checked style="width:auto;" /> Vodiči</label>
+              <label><input type="checkbox" value="vehicles" checked style="width:auto;" /> Autá</label>
+              <label><input type="checkbox" value="customers" checked style="width:auto;" /> Zákazníci</label>
+              <label><input type="checkbox" value="month_plans" checked style="width:auto;" /> Plány</label>
+              <label><input type="checkbox" value="trips" checked style="width:auto;" /> Jazdy</label>
+              <label><input type="checkbox" value="refuels" checked style="width:auto;" /> Tankovania</label>
+            </div>
+            <button onclick="downloadBackupJson()">Exportovať vybrané sekcie (JSON)</button>
             <input id="backup_import_file" type="file" accept=".json" />
-            <label><input id="backup_replace" type="checkbox" style="width:auto;" checked /> Pri importe prepísať existujúce dáta</label>
-            <button onclick="importBackupJson()">Importovať zálohu</button>
+            <div class="toolbar" id="backup_sections_import">
+              <label><input type="checkbox" value="settings" checked style="width:auto;" /> Nastavenia</label>
+              <label><input type="checkbox" value="drivers" checked style="width:auto;" /> Vodiči</label>
+              <label><input type="checkbox" value="vehicles" checked style="width:auto;" /> Autá</label>
+              <label><input type="checkbox" value="customers" checked style="width:auto;" /> Zákazníci</label>
+              <label><input type="checkbox" value="month_plans" checked style="width:auto;" /> Plány</label>
+              <label><input type="checkbox" value="trips" checked style="width:auto;" /> Jazdy</label>
+              <label><input type="checkbox" value="refuels" checked style="width:auto;" /> Tankovania</label>
+            </div>
+            <label><input id="backup_replace" type="checkbox" style="width:auto;" checked /> Úplná obnova vybraných sekcií</label>
+            <p class="muted" id="backup_restore_hint">Ak je zapnuté pri všetkých sekciách, databáza sa obnoví presne zo zálohy. Pri čiastočnom importe sa vybrané sekcie bezpečne zlúčia a aktualizujú.</p>
+            <button onclick="importBackupJson()">Importovať vybrané sekcie</button>
           </div>
         </div>
       </section>
@@ -467,7 +487,9 @@
         if (!data || typeof data !== "object") return String(data);
         if (data.status) return `Stav služby: ${data.status}`;
         if (data.imported) {
-          return `Import zálohy hotový: autá ${data.vehicles}, vodiči ${data.drivers}, zákazníci ${data.customers}, plány ${data.month_plans}, jazdy ${data.trips}, tankovania ${data.refuels}.`;
+          const sections = Array.isArray(data.sections) ? data.sections.join(", ") : "všetky sekcie";
+          const modeLabel = data.mode === "replace_all" ? "Úplná obnova" : data.mode === "replace_selected" ? "Obnova vybraných sekcií" : "Doplnenie/aktualizácia";
+          return `${modeLabel}: sekcie ${sections}. Autá ${data.vehicles}, vodiči ${data.drivers}, zákazníci ${data.customers}, plány ${data.month_plans}, jazdy ${data.trips}, tankovania ${data.refuels}.`;
         }
         if (data.generated_trips !== undefined && data.generated_km !== undefined) {
           return `Generovanie hotové: ${data.generated_trips} jázd, ${data.generated_km} služobných km.`
@@ -764,17 +786,29 @@
       }
 
       function downloadBackupJson() {
-        window.open("/backup/export", "_blank");
+        const sections = getSelectedBackupSections("backup_sections_export");
+        if (!sections.length) { show("Vyber aspoň jednu sekciu na export."); return; }
+        const query = sections.map(s => `sections=${encodeURIComponent(s)}`).join("&");
+        window.open(`/backup/export?${query}`, "_blank");
       }
 
       async function importBackupJson() {
         const fileInput = document.getElementById("backup_import_file");
         if (!fileInput.files || !fileInput.files.length) { show("Vyber JSON zálohu."); return; }
-        if (!confirm("Import zálohy prepíše aktuálne dáta. Pokračovať?")) return;
+        const sections = getSelectedBackupSections("backup_sections_import");
+        if (!sections.length) { show("Vyber aspoň jednu sekciu na import."); return; }
+        const isFull = backup_replace.checked && sections.length === 7;
+        const message = isFull
+          ? "Prebehne úplná obnova všetkých sekcií zo zálohy. Aktuálne dáta budú nahradené. Pokračovať?"
+          : backup_replace.checked
+            ? "Prebehne obnova vybraných sekcií. Nevybrané sekcie ostanú bez zmeny. Pokračovať?"
+            : "Prebehne doplnenie alebo aktualizácia vybraných sekcií bez mazania ostatných dát. Pokračovať?";
+        if (!confirm(message)) return;
         try {
           const form = new FormData();
           form.append("file", fileInput.files[0]);
           form.append("replace_existing", backup_replace.checked ? "true" : "false");
+          sections.forEach(section => form.append("sections", section));
           const res = await fetch("/backup/import", { method: "POST", body: form });
           const payload = await res.json();
           if (!res.ok) throw new Error(payload.detail ? `Chyba ${res.status}: ${payload.detail}` : JSON.stringify(payload));
@@ -783,6 +817,10 @@
           await loadTripsFiltered();
           await loadRefuelsByMonth().catch(() => {});
         } catch (e) { show(e.message); }
+      }
+
+      function getSelectedBackupSections(containerId) {
+        return Array.from(document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`)).map(el => el.value);
       }
 
       async function estimateCustomerDistance() {

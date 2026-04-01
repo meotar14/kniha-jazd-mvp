@@ -53,7 +53,8 @@ API beží na:
 - Upload loga aj zo súboru (nielen URL)
 - Import zákazníkov z CSV + mapovanie stĺpcov + dôvody zlyhania po riadkoch
 - Generátor jázd zohľadňuje dátumy tankovania a preferuje pracovné dni
-- Export a import zálohy konfigurácie a všetkých dát (JSON)
+- Export a import zálohy po sekciách (nastavenia, autá, vodiči, zákazníci, plány, jazdy, tankovania)
+- Úplná obnova zo zálohy alebo bezpečné doplnenie/aktualizácia vybraných sekcií
 
 ## 3. Odporúčaný postup
 
