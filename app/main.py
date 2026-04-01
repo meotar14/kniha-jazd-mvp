@@ -1287,7 +1287,7 @@ def list_all_trips(
     if mode == "manual":
         query = query.filter(models.Trip.generated.is_(False), models.Trip.is_private.is_(False))
     elif mode == "generated":
-        query = query.filter(models.Trip.generated.is_(True))
+        query = query.filter(models.Trip.generated.is_(True), models.Trip.is_private.is_(False))
     elif mode == "private":
         query = query.filter(models.Trip.is_private.is_(True))
 
@@ -1509,7 +1509,7 @@ def export_trips_csv(
     if mode == "manual":
         query = query.filter(models.Trip.generated.is_(False), models.Trip.is_private.is_(False))
     elif mode == "generated":
-        query = query.filter(models.Trip.generated.is_(True))
+        query = query.filter(models.Trip.generated.is_(True), models.Trip.is_private.is_(False))
     elif mode == "private":
         query = query.filter(models.Trip.is_private.is_(True))
     rows = query.order_by(models.Trip.trip_date.asc(), models.Trip.id.asc()).all()
@@ -1556,7 +1556,7 @@ def export_trips_xlsx(
         if mode == "manual":
             query = query.filter(models.Trip.generated.is_(False), models.Trip.is_private.is_(False))
         elif mode == "generated":
-            query = query.filter(models.Trip.generated.is_(True))
+            query = query.filter(models.Trip.generated.is_(True), models.Trip.is_private.is_(False))
         elif mode == "private":
             query = query.filter(models.Trip.is_private.is_(True))
         rows = query.order_by(models.Trip.trip_date.asc(), models.Trip.id.asc()).all()
@@ -1608,7 +1608,7 @@ def query_filtered_trips_for_export(
     if mode == "manual":
         query = query.filter(models.Trip.generated.is_(False), models.Trip.is_private.is_(False))
     elif mode == "generated":
-        query = query.filter(models.Trip.generated.is_(True))
+        query = query.filter(models.Trip.generated.is_(True), models.Trip.is_private.is_(False))
     elif mode == "private":
         query = query.filter(models.Trip.is_private.is_(True))
 
