@@ -145,10 +145,15 @@ async def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db
 @app.get("/assets/{filename}", include_in_schema=False)
 def assets(filename: str) -> FileResponse:
     safe_name = Path(filename).name
-    asset_path = Path(__file__).parent / "static" / "uploads" / safe_name
-    if not asset_path.exists():
-        raise HTTPException(status_code=404, detail="asset not found")
-    return FileResponse(asset_path)
+    static_root = Path(__file__).parent / "static"
+    candidates = [
+        static_root / "uploads" / safe_name,
+        static_root / "branding" / safe_name,
+    ]
+    for asset_path in candidates:
+        if asset_path.exists():
+            return FileResponse(asset_path)
+    raise HTTPException(status_code=404, detail="asset not found")
 
 
 def _parse_backup_date(value: str | None) -> date | None:
@@ -777,6 +782,8 @@ def serialize_settings(row: models.AppSettings) -> dict:
     logo_url = row.company_logo_url
     if logo_url and "/assets/company-logo" in logo_url:
         logo_url = logo_url.replace("/assets/company-logo", "/assets/company_logo")
+    if not logo_url:
+        logo_url = "/assets/airo_default_logo.png"
     return {
         "company_name": row.company_name,
         "company_ico": row.company_ico,
