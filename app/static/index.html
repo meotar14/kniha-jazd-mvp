@@ -42,21 +42,20 @@
       body::before {
         content: "";
         position: fixed;
-        right: -8vw;
-        bottom: 6vh;
-        width: min(42vw, 420px);
-        height: min(42vw, 420px);
+        inset: -18vh -18vw;
         pointer-events: none;
         background-image: var(--brand-watermark);
-        background-repeat: no-repeat;
-        background-position: center;
-        background-size: contain;
-        opacity: 0.055;
+        background-repeat: repeat;
+        background-position: 0 0;
+        background-size: 120px auto;
+        opacity: 0.028;
         filter: saturate(0.9);
+        transform: rotate(-18deg);
+        transform-origin: center;
         z-index: 0;
       }
       body[data-theme="dark"]::before {
-        opacity: 0.09;
+        opacity: 0.05;
       }
       .wrap { max-width: 1460px; margin: 0 auto; padding: 18px; position: relative; }
       .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
@@ -745,15 +744,28 @@
         x_private_km.checked = Boolean(selectedPlan && selectedPlan.private_km_enabled);
       }
 
+      function applyBrandLogo(url) {
+        const activeLogo = url || DEFAULT_BRAND_LOGO;
+        const probe = new Image();
+        probe.onload = () => {
+          company_logo.src = activeLogo;
+          company_logo.style.display = "block";
+          document.body.style.setProperty("--brand-watermark", `url("${activeLogo}")`);
+        };
+        probe.onerror = () => {
+          company_logo.src = DEFAULT_BRAND_LOGO;
+          company_logo.style.display = "block";
+          document.body.style.setProperty("--brand-watermark", `url("${DEFAULT_BRAND_LOGO}")`);
+        };
+        probe.src = activeLogo;
+      }
+
       function applySettingsToHeader() {
         if (!settingsCache) return;
         const company = settingsCache.company_name || "Firemný režim";
         const icoPart = settingsCache.company_ico ? ` | IČO: ${settingsCache.company_ico}` : "";
-        const activeLogo = settingsCache.company_logo_url || DEFAULT_BRAND_LOGO;
         company_label.textContent = `${company}${icoPart}`;
-        company_logo.src = activeLogo;
-        company_logo.style.display = "block";
-        document.body.style.setProperty("--brand-watermark", `url("${activeLogo}")`);
+        applyBrandLogo(settingsCache.company_logo_url);
       }
 
       function applyMeta() {
