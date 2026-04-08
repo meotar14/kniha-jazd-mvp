@@ -16,6 +16,7 @@ Tento dokument popisuje hlavné moduly aplikácie `kniha-jazd-mvp`, rozdiely med
 ### Zákazníci
 - evidencia zákazníkov, adries a vzdialenosti od základne
 - možnosť povoliť alebo zakázať zákazníka pre automatické generovanie
+- podpora globálneho číselníka aj samostatného číselníka pre konkrétne auto
 - podpora importu z CSV
 
 ### Mesačné Plány
@@ -41,6 +42,7 @@ Tento dokument popisuje hlavné moduly aplikácie `kniha-jazd-mvp`, rozdiely med
 - firma, IČO, logo, adresa základne
 - import zákazníkov
 - export a import záloh
+- evidencia sviatkov a dní pracovného voľna
 
 ## Hlavné Funkcionality
 
@@ -51,6 +53,7 @@ Tento dokument popisuje hlavné moduly aplikácie `kniha-jazd-mvp`, rozdiely med
 - filtrovanie plánov podľa auta, vodiča, mesiaca a roka
 - filtrovanie jázd podľa plánu, auta, vodiča, mesiaca, roka a typu záznamu
 - triedenie zákazníkov podľa mena, vzdialenosti, vytvorenia a poslednej úpravy
+- hromadné povoľovanie alebo zakazovanie zákazníkov pre generovanie
 - konfigurovateľné stĺpce v zozname jázd
 - viditeľné potvrdenie uloženia po vytvorení záznamu
 - ručné jazdy s rozsahom dátumov
@@ -69,14 +72,17 @@ Generovanie jazd funguje nad mesačným plánom a jeho cieľovým nájazdom.
 - počiatočný a koncový stav km v mesačnom pláne
 - voliteľné zohľadnenie 10 % súkromných km mimo evidencie jázd
 - dostupní zákazníci a ich vzdialenosť od základne
+- prípadne vlastný číselník zákazníkov podľa auta
 - ručne zadané jazdy
 - viacdňové ručné jazdy
 - tankovania
 - pracovné dni v mesiaci
+- sviatky a zadané dni pracovného voľna
 
 ### Pravidlá Generovania
 - generátor sa snaží dorovnať cieľové km plánu
 - preferuje pracovné dni pred víkendmi
+- vyhýba sa sviatkom a zadaným dňom pracovného voľna
 - rešpektuje dni blokované ručnými jazdami
 - negeneruje jazdu `základňa -> základňa`
 - nepoužíva zákazníkov, ktorí sú zakázaní pre generovanie

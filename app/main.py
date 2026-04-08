@@ -1,7 +1,7 @@
 import csv
 from copy import copy
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Literal
@@ -35,7 +35,7 @@ MONTH_NAMES_SK = {
     11: "november",
     12: "december",
 }
-BACKUP_SECTIONS = ("settings", "drivers", "vehicles", "customers", "month_plans", "trips", "refuels")
+BACKUP_SECTIONS = ("settings", "drivers", "vehicles", "customers", "month_plans", "trips", "refuels", "holidays")
 
 
 def run_lightweight_migrations() -> None:
@@ -59,6 +59,9 @@ def run_lightweight_migrations() -> None:
         conn.execute(text("UPDATE month_plans SET private_km_ratio_percent = 10 WHERE private_km_ratio_percent IS NULL"))
         conn.execute(text("ALTER TABLE month_plans ALTER COLUMN private_km_ratio_percent SET NOT NULL"))
         conn.execute(text("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS default_driver_id INTEGER"))
+        conn.execute(text("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS use_custom_customer_catalog BOOLEAN DEFAULT FALSE"))
+        conn.execute(text("UPDATE vehicles SET use_custom_customer_catalog = FALSE WHERE use_custom_customer_catalog IS NULL"))
+        conn.execute(text("ALTER TABLE vehicles ALTER COLUMN use_custom_customer_catalog SET NOT NULL"))
         conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE"))
         conn.execute(text("UPDATE trips SET is_private = FALSE WHERE is_private IS NULL"))
         conn.execute(text("ALTER TABLE trips ALTER COLUMN is_private SET NOT NULL"))
@@ -68,6 +71,8 @@ def run_lightweight_migrations() -> None:
         conn.execute(text("ALTER TABLE customers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
         conn.execute(text("UPDATE customers SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
         conn.execute(text("ALTER TABLE customers ALTER COLUMN updated_at SET NOT NULL"))
+        conn.execute(text("ALTER TABLE customers ADD COLUMN IF NOT EXISTS vehicle_id INTEGER"))
+        conn.execute(text("ALTER TABLE customers ADD COLUMN IF NOT EXISTS source_customer_id INTEGER"))
 
 
 def ensure_settings_row(db: Session) -> models.AppSettings:
@@ -119,6 +124,45 @@ def update_settings(payload: schemas.AppSettingsUpdate, db: Session = Depends(ge
     return serialize_settings(row)
 
 
+@app.get("/holidays")
+def list_holidays(year: int | None = None, db: Session = Depends(get_db)) -> list[dict]:
+    target_year = year or datetime.utcnow().year
+    ensure_holidays_for_year(db, target_year)
+    query = db.query(models.Holiday)
+    if year is not None:
+        query = query.filter(
+            models.Holiday.holiday_date >= date(year, 1, 1),
+            models.Holiday.holiday_date <= date(year, 12, 31),
+        )
+    rows = query.order_by(models.Holiday.holiday_date.asc(), models.Holiday.id.asc()).all()
+    return [serialize_holiday(row) for row in rows]
+
+
+@app.post("/holidays")
+def create_holiday(payload: schemas.HolidayCreate, db: Session = Depends(get_db)) -> dict:
+    existing = db.query(models.Holiday).filter(models.Holiday.holiday_date == payload.holiday_date).first()
+    if existing:
+        existing.name = payload.name
+        db.commit()
+        db.refresh(existing)
+        return serialize_holiday(existing)
+    row = models.Holiday(holiday_date=payload.holiday_date, name=payload.name)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return serialize_holiday(row)
+
+
+@app.delete("/holidays/{holiday_id}")
+def delete_holiday(holiday_id: int, db: Session = Depends(get_db)) -> dict:
+    row = db.get(models.Holiday, holiday_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="holiday not found")
+    db.delete(row)
+    db.commit()
+    return {"deleted": True, "id": holiday_id}
+
+
 @app.post("/settings/logo")
 async def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db)) -> dict:
     allowed = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
@@ -168,11 +212,68 @@ def _parse_backup_date(value: str | None) -> date | None:
     return date.fromisoformat(text)
 
 
+def _easter_sunday(year: int) -> date:
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return date(year, month, day)
+
+
+def get_slovak_public_holidays(year: int) -> list[tuple[date, str]]:
+    easter = _easter_sunday(year)
+    return [
+        (date(year, 1, 1), "Deň vzniku Slovenskej republiky"),
+        (date(year, 1, 6), "Zjavenie Pána"),
+        (easter - timedelta(days=2), "Veľký piatok"),
+        (easter + timedelta(days=1), "Veľkonočný pondelok"),
+        (date(year, 5, 1), "Sviatok práce"),
+        (date(year, 5, 8), "Deň víťazstva nad fašizmom"),
+        (date(year, 7, 5), "Sviatok svätého Cyrila a Metoda"),
+        (date(year, 8, 29), "Výročie SNP"),
+        (date(year, 9, 1), "Deň Ústavy Slovenskej republiky"),
+        (date(year, 9, 15), "Sedembolestná Panna Mária"),
+        (date(year, 11, 1), "Sviatok všetkých svätých"),
+        (date(year, 11, 17), "Deň boja za slobodu a demokraciu"),
+        (date(year, 12, 24), "Štedrý deň"),
+        (date(year, 12, 25), "Prvý sviatok vianočný"),
+        (date(year, 12, 26), "Druhý sviatok vianočný"),
+    ]
+
+
+def ensure_holidays_for_year(db: Session, year: int) -> None:
+    existing_dates = {
+        row.holiday_date
+        for row in db.query(models.Holiday).filter(
+            models.Holiday.holiday_date >= date(year, 1, 1),
+            models.Holiday.holiday_date <= date(year, 12, 31),
+        )
+    }
+    inserted = False
+    for holiday_date, name in get_slovak_public_holidays(year):
+        if holiday_date in existing_dates:
+            continue
+        db.add(models.Holiday(holiday_date=holiday_date, name=name))
+        inserted = True
+    if inserted:
+        db.commit()
+
+
 def _reset_postgres_sequences(db: Session) -> None:
     bind = db.get_bind()
     if not bind or bind.dialect.name != "postgresql":
         return
-    table_names = ["vehicles", "drivers", "customers", "month_plans", "trips", "refuels"]
+    table_names = ["vehicles", "drivers", "customers", "month_plans", "trips", "refuels", "holidays"]
     for table in table_names:
         db.execute(
             text(
@@ -220,6 +321,7 @@ def _build_backup_payload(db: Session, sections: list[str]) -> dict:
                 "expected_consumption_l_per_100km": v.expected_consumption_l_per_100km,
                 "tank_capacity_l": v.tank_capacity_l,
                 "default_driver_id": v.default_driver_id,
+                "use_custom_customer_catalog": v.use_custom_customer_catalog,
             }
             for v in db.query(models.Vehicle).order_by(models.Vehicle.id.asc()).all()
         ]
@@ -236,6 +338,8 @@ def _build_backup_payload(db: Session, sections: list[str]) -> dict:
                 "address": c.address,
                 "distance_from_base_km": c.distance_from_base_km,
                 "active_for_generation": c.active_for_generation,
+                "vehicle_id": c.vehicle_id,
+                "source_customer_id": c.source_customer_id,
                 "created_at": c.created_at.isoformat() if c.created_at else None,
                 "updated_at": c.updated_at.isoformat() if c.updated_at else None,
             }
@@ -288,10 +392,16 @@ def _build_backup_payload(db: Session, sections: list[str]) -> dict:
             }
             for r in db.query(models.Refuel).order_by(models.Refuel.id.asc()).all()
         ]
+    if "holidays" in sections:
+        payload["holidays"] = [
+            {"id": h.id, "holiday_date": h.holiday_date.isoformat(), "name": h.name}
+            for h in db.query(models.Holiday).order_by(models.Holiday.holiday_date.asc(), models.Holiday.id.asc()).all()
+        ]
     return payload
 
 
 def _full_restore_backup(db: Session, payload: dict) -> dict:
+    db.query(models.Holiday).delete()
     db.query(models.Refuel).delete()
     db.query(models.Trip).delete()
     db.query(models.MonthPlan).delete()
@@ -322,6 +432,7 @@ def _full_restore_backup(db: Session, payload: dict) -> dict:
                 expected_consumption_l_per_100km=float(v["expected_consumption_l_per_100km"]),
                 tank_capacity_l=float(v.get("tank_capacity_l", 50)),
                 default_driver_id=int(v["default_driver_id"]) if v.get("default_driver_id") else None,
+                use_custom_customer_catalog=bool(v.get("use_custom_customer_catalog", False)),
             )
         )
     for c in payload.get("customers", []):
@@ -332,6 +443,8 @@ def _full_restore_backup(db: Session, payload: dict) -> dict:
                 address=c["address"],
                 distance_from_base_km=float(c["distance_from_base_km"]),
                 active_for_generation=bool(c.get("active_for_generation", True)),
+                vehicle_id=int(c["vehicle_id"]) if c.get("vehicle_id") is not None else None,
+                source_customer_id=int(c["source_customer_id"]) if c.get("source_customer_id") is not None else None,
                 created_at=datetime.fromisoformat(c["created_at"]) if c.get("created_at") else datetime.utcnow(),
                 updated_at=datetime.fromisoformat(c["updated_at"]) if c.get("updated_at") else datetime.utcnow(),
             )
@@ -380,6 +493,8 @@ def _full_restore_backup(db: Session, payload: dict) -> dict:
                 is_foreign=bool(r.get("is_foreign", False)),
             )
         )
+    for h in payload.get("holidays", []):
+        db.add(models.Holiday(id=int(h["id"]), holiday_date=_parse_backup_date(h.get("holiday_date")), name=h["name"]))
     db.flush()
     _reset_postgres_sequences(db)
     return {
@@ -390,6 +505,7 @@ def _full_restore_backup(db: Session, payload: dict) -> dict:
         "month_plans": len(payload.get("month_plans", [])),
         "trips": len(payload.get("trips", [])),
         "refuels": len(payload.get("refuels", [])),
+        "holidays": len(payload.get("holidays", [])),
     }
 
 
@@ -436,15 +552,17 @@ def _merge_backup_sections(db: Session, payload: dict, sections: list[str], repl
             row.tank_capacity_l = float(v.get("tank_capacity_l", 50))
             default_driver_id = int(v["default_driver_id"]) if v.get("default_driver_id") else None
             row.default_driver_id = driver_id_map.get(default_driver_id) if default_driver_id else None
+            row.use_custom_customer_catalog = bool(v.get("use_custom_customer_catalog", False))
             vehicle_id_map[int(v["id"])] = row.id
     else:
         vehicle_id_map = {v.id: v.id for v in db.query(models.Vehicle).all()}
 
     if "customers" in sections:
         existing_customers = db.query(models.Customer).all()
-        existing_by_key = {_normalize_customer_key(c.name, c.address): c for c in existing_customers}
+        existing_by_key = {(_normalize_customer_key(c.name, c.address), c.vehicle_id): c for c in existing_customers}
         for c in payload.get("customers", []):
-            key = _normalize_customer_key(c["name"], c["address"])
+            mapped_vehicle_id = vehicle_id_map.get(int(c["vehicle_id"])) if c.get("vehicle_id") is not None else None
+            key = (_normalize_customer_key(c["name"], c["address"]), mapped_vehicle_id)
             row = existing_by_key.get(key)
             if not row:
                 row = models.Customer(
@@ -452,12 +570,14 @@ def _merge_backup_sections(db: Session, payload: dict, sections: list[str], repl
                     address=c["address"],
                     distance_from_base_km=float(c["distance_from_base_km"]),
                     active_for_generation=bool(c.get("active_for_generation", True)),
+                    vehicle_id=mapped_vehicle_id,
                 )
                 db.add(row)
                 db.flush()
                 existing_by_key[key] = row
             row.distance_from_base_km = float(c["distance_from_base_km"])
             row.active_for_generation = bool(c.get("active_for_generation", True))
+            row.vehicle_id = mapped_vehicle_id
             row.created_at = datetime.fromisoformat(c["created_at"]) if c.get("created_at") else row.created_at
             row.updated_at = datetime.fromisoformat(c["updated_at"]) if c.get("updated_at") else datetime.utcnow()
             customer_id_map[int(c["id"])] = row.id
@@ -498,6 +618,18 @@ def _merge_backup_sections(db: Session, payload: dict, sections: list[str], repl
             month_plan_id_map[int(p["id"])] = row.id
     else:
         month_plan_id_map = {p.id: p.id for p in db.query(models.MonthPlan).all()}
+
+    if "holidays" in sections:
+        existing_by_date = {h.holiday_date: h for h in db.query(models.Holiday).all()}
+        for h in payload.get("holidays", []):
+            holiday_date = _parse_backup_date(h.get("holiday_date"))
+            row = existing_by_date.get(holiday_date)
+            if not row:
+                row = models.Holiday(holiday_date=holiday_date, name=h["name"])
+                db.add(row)
+                existing_by_date[holiday_date] = row
+            else:
+                row.name = h["name"]
 
     if "refuels" in sections and replace_existing:
         imported_plan_ids = [month_plan_id_map.get(int(r["month_plan_id"])) for r in payload.get("refuels", [])]
@@ -591,6 +723,7 @@ def _merge_backup_sections(db: Session, payload: dict, sections: list[str], repl
         "month_plans": len(payload.get("month_plans", [])) if "month_plans" in sections else 0,
         "trips": imported_trips,
         "refuels": imported_refuels,
+        "holidays": len(payload.get("holidays", [])) if "holidays" in sections else 0,
         "sections": sections,
     }
 
@@ -684,6 +817,7 @@ def serialize_vehicle(vehicle: models.Vehicle) -> dict:
         "tank_capacity_l": vehicle.tank_capacity_l,
         "default_driver_id": vehicle.default_driver_id,
         "default_driver_name": vehicle.default_driver.full_name if vehicle.default_driver else None,
+        "use_custom_customer_catalog": vehicle.use_custom_customer_catalog,
     }
 
 
@@ -696,15 +830,52 @@ def serialize_driver(driver: models.Driver) -> dict:
 
 
 def serialize_customer(customer: models.Customer) -> dict:
+    catalog_name = "Globálny"
+    if customer.vehicle_id and customer.vehicle:
+        catalog_name = f"{customer.vehicle.plate_number} | vlastný"
     return {
         "id": customer.id,
         "name": customer.name,
         "address": customer.address,
         "distance_from_base_km": customer.distance_from_base_km,
         "active_for_generation": customer.active_for_generation,
+        "vehicle_id": customer.vehicle_id,
+        "source_customer_id": customer.source_customer_id,
+        "catalog_name": catalog_name,
         "created_at": customer.created_at.isoformat() if customer.created_at else None,
         "updated_at": customer.updated_at.isoformat() if customer.updated_at else None,
     }
+
+
+def serialize_holiday(row: models.Holiday) -> dict:
+    return {
+        "id": row.id,
+        "holiday_date": row.holiday_date.isoformat(),
+        "name": row.name,
+    }
+
+
+def ensure_vehicle_customer_catalog(db: Session, vehicle: models.Vehicle) -> None:
+    if not vehicle.use_custom_customer_catalog:
+        return
+    existing = db.query(models.Customer).filter(models.Customer.vehicle_id == vehicle.id).first()
+    if existing:
+        return
+    base_customers = db.query(models.Customer).filter(models.Customer.vehicle_id.is_(None)).order_by(models.Customer.id.asc()).all()
+    for customer in base_customers:
+        db.add(
+            models.Customer(
+                name=customer.name,
+                address=customer.address,
+                distance_from_base_km=customer.distance_from_base_km,
+                active_for_generation=customer.active_for_generation,
+                vehicle_id=vehicle.id,
+                source_customer_id=customer.id,
+                created_at=customer.created_at,
+                updated_at=customer.updated_at,
+            )
+        )
+    db.flush()
 
 
 def serialize_month_plan(month_plan: models.MonthPlan) -> dict:
@@ -1088,6 +1259,8 @@ def create_vehicle(payload: schemas.VehicleCreate, db: Session = Depends(get_db)
     db.add(vehicle)
     db.commit()
     db.refresh(vehicle)
+    ensure_vehicle_customer_catalog(db, vehicle)
+    db.commit()
     return {"id": vehicle.id, "plate_number": vehicle.plate_number}
 
 
@@ -1101,6 +1274,8 @@ def update_vehicle(vehicle_id: int, payload: schemas.VehicleUpdate, db: Session 
     for key, value in payload.model_dump().items():
         setattr(vehicle, key, value)
     try:
+        db.flush()
+        ensure_vehicle_customer_catalog(db, vehicle)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -1116,6 +1291,7 @@ def delete_vehicle(vehicle_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail="vehicle not found")
     if db.query(models.MonthPlan).filter(models.MonthPlan.vehicle_id == vehicle_id).first():
         raise HTTPException(status_code=409, detail="vehicle is used in month plans")
+    db.query(models.Customer).filter(models.Customer.vehicle_id == vehicle_id).delete(synchronize_session=False)
     db.delete(vehicle)
     db.commit()
     return {"deleted": True, "id": vehicle_id}
@@ -1168,6 +1344,8 @@ def delete_driver(driver_id: int, db: Session = Depends(get_db)) -> dict:
 
 @app.post("/customers")
 def create_customer(payload: schemas.CustomerCreate, db: Session = Depends(get_db)) -> dict:
+    if payload.vehicle_id and not db.get(models.Vehicle, payload.vehicle_id):
+        raise HTTPException(status_code=404, detail="vehicle not found")
     customer = models.Customer(**payload.model_dump())
     db.add(customer)
     db.commit()
@@ -1179,6 +1357,8 @@ def create_customer(payload: schemas.CustomerCreate, db: Session = Depends(get_d
 def list_customers(
     sort_by: Literal["name", "distance", "created_at", "updated_at"] = "name",
     sort_dir: Literal["asc", "desc"] = "asc",
+    vehicle_id: int | None = None,
+    all_catalogs: bool = False,
     db: Session = Depends(get_db),
 ) -> list[dict]:
     sort_column = {
@@ -1188,7 +1368,13 @@ def list_customers(
         "updated_at": models.Customer.updated_at,
     }[sort_by]
     order_expr = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
-    rows = db.query(models.Customer).order_by(order_expr, models.Customer.id.asc()).all()
+    query = db.query(models.Customer).options(joinedload(models.Customer.vehicle))
+    if not all_catalogs:
+        if vehicle_id is None:
+            query = query.filter(models.Customer.vehicle_id.is_(None))
+        else:
+            query = query.filter(models.Customer.vehicle_id == vehicle_id)
+    rows = query.order_by(order_expr, models.Customer.id.asc()).all()
     return [serialize_customer(r) for r in rows]
 
 
@@ -1197,6 +1383,8 @@ def update_customer(customer_id: int, payload: schemas.CustomerUpdate, db: Sessi
     customer = db.get(models.Customer, customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="customer not found")
+    if payload.vehicle_id and not db.get(models.Vehicle, payload.vehicle_id):
+        raise HTTPException(status_code=404, detail="vehicle not found")
     for key, value in payload.model_dump().items():
         setattr(customer, key, value)
     try:
@@ -1206,6 +1394,20 @@ def update_customer(customer_id: int, payload: schemas.CustomerUpdate, db: Sessi
         raise HTTPException(status_code=409, detail="customer update conflicts with existing data") from exc
     db.refresh(customer)
     return serialize_customer(customer)
+
+
+@app.post("/customers/bulk-generation")
+def bulk_update_customer_generation(payload: schemas.BulkCustomerGenerationUpdate, db: Session = Depends(get_db)) -> dict:
+    rows = db.query(models.Customer).filter(models.Customer.id.in_(payload.ids)).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="no customers found")
+    for row in rows:
+        row.active_for_generation = payload.active_for_generation
+    db.commit()
+    return {
+        "updated": len(rows),
+        "active_for_generation": payload.active_for_generation,
+    }
 
 
 @app.delete("/customers/{customer_id}")
@@ -1581,6 +1783,7 @@ def bulk_delete_vehicles(payload: schemas.BulkDeleteRequest, db: Session = Depen
             continue
         if db.query(models.MonthPlan).filter(models.MonthPlan.vehicle_id == entity_id).first():
             continue
+        db.query(models.Customer).filter(models.Customer.vehicle_id == entity_id).delete(synchronize_session=False)
         db.delete(vehicle)
         deleted += 1
     db.commit()
@@ -1665,6 +1868,7 @@ def generate_month_trips(
     month_plan = db.get(models.MonthPlan, month_plan_id)
     if not month_plan:
         raise HTTPException(status_code=404, detail="month plan not found")
+    ensure_holidays_for_year(db, month_plan.year)
     if payload is not None:
         month_plan.private_km_enabled = payload.private_km_enabled
         month_plan.private_km_ratio_percent = payload.private_km_ratio_percent

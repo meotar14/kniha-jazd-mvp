@@ -15,6 +15,7 @@ class Vehicle(Base):
     expected_consumption_l_per_100km: Mapped[float] = mapped_column(Float, nullable=False)
     tank_capacity_l: Mapped[float] = mapped_column(Float, nullable=False, default=50.0)
     default_driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    use_custom_customer_catalog: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     month_plans: Mapped[list["MonthPlan"]] = relationship(back_populates="vehicle")
     default_driver: Mapped["Driver | None"] = relationship(foreign_keys=[default_driver_id])
@@ -38,8 +39,13 @@ class Customer(Base):
     address: Mapped[str] = mapped_column(String(256), nullable=False)
     distance_from_base_km: Mapped[float] = mapped_column(Float, nullable=False)
     active_for_generation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"), nullable=True)
+    source_customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    vehicle: Mapped[Vehicle | None] = relationship(foreign_keys=[vehicle_id])
+    source_customer: Mapped["Customer | None"] = relationship(remote_side="Customer.id", foreign_keys=[source_customer_id])
 
 
 class MonthPlan(Base):
@@ -105,3 +111,12 @@ class AppSettings(Base):
     company_ico: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     company_logo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     company_base_address: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+
+class Holiday(Base):
+    __tablename__ = "holidays"
+    __table_args__ = (UniqueConstraint("holiday_date", name="uq_holiday_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    holiday_date: Mapped[date] = mapped_column(Date, nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)

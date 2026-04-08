@@ -46,6 +46,8 @@ API beží na:
 - Editácia všetkých entít cez plný formulár v modálnom okne
 - Výrazné potvrdenie uloženia po vytvorení auta, vodiča, zákazníka, plánu, jazdy a tankovania
 - Triedenie zákazníkov podľa mena, vzdialenosti, dátumu vytvorenia a dátumu úpravy
+- Vozidlo môže používať vlastný číselník zákazníkov oddelený od globálneho číselníka
+- Hromadné označovanie a odznačovanie zákazníkov vhodných pre generovanie
 - Výber viacerých riadkov v tabuľkách a hromadné mazanie
 - Filter plánov a jázd podľa auta, vodiča, roka a mesiaca
 - Export len manuálnych alebo len generovaných jázd
@@ -53,7 +55,8 @@ API beží na:
 - Upload loga aj zo súboru (nielen URL)
 - Import zákazníkov z CSV + mapovanie stĺpcov + dôvody zlyhania po riadkoch
 - Generátor jázd zohľadňuje dátumy tankovania a preferuje pracovné dni
-- Export a import zálohy po sekciách (nastavenia, autá, vodiči, zákazníci, plány, jazdy, tankovania)
+- Generátor sa vyhýba aj štátnym sviatkom a zadaným dňom pracovného voľna
+- Export a import zálohy po sekciách (nastavenia, autá, vodiči, zákazníci, plány, jazdy, tankovania, sviatky)
 - Úplná obnova zo zálohy alebo bezpečné doplnenie/aktualizácia vybraných sekcií
 
 ## 3. Odporúčaný postup

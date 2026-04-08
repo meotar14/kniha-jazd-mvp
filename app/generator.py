@@ -27,7 +27,10 @@ def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[i
     existing_private_km = sum(t.distance_km for t in month_plan.trips if t.is_private)
     remaining = round(target_km - existing_service_km, 1)
 
-    customers = db.query(models.Customer).all()
+    if month_plan.vehicle.use_custom_customer_catalog:
+        customers = db.query(models.Customer).filter(models.Customer.vehicle_id == month_plan.vehicle_id).all()
+    else:
+        customers = db.query(models.Customer).filter(models.Customer.vehicle_id.is_(None)).all()
     if remaining > 0 and not customers:
         return 0, 0.0
     base_normalized = (month_plan.base_address or "").strip().casefold()
@@ -44,6 +47,13 @@ def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[i
     days_in_month = calendar.monthrange(month_plan.year, month_plan.month)[1]
     rng = Random(month_plan.year * 100 + month_plan.month + month_plan.vehicle_id)
     blocked_dates: set[date] = set()
+    holiday_dates = {
+        row.holiday_date
+        for row in db.query(models.Holiday).filter(
+            models.Holiday.holiday_date >= date(month_plan.year, month_plan.month, 1),
+            models.Holiday.holiday_date <= date(month_plan.year, month_plan.month, days_in_month),
+        )
+    }
     for trip in month_plan.trips:
         if trip.generated:
             continue
@@ -57,7 +67,9 @@ def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[i
     weekday_dates = [
         date(month_plan.year, month_plan.month, d)
         for d in range(1, days_in_month + 1)
-        if date(month_plan.year, month_plan.month, d).weekday() < 5 and date(month_plan.year, month_plan.month, d) not in blocked_dates
+        if date(month_plan.year, month_plan.month, d).weekday() < 5
+        and date(month_plan.year, month_plan.month, d) not in blocked_dates
+        and date(month_plan.year, month_plan.month, d) not in holiday_dates
     ]
     day_pool = weekday_dates if weekday_dates else [
         date(month_plan.year, month_plan.month, d)

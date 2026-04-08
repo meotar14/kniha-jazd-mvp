@@ -27,6 +27,7 @@ class VehicleCreate(BaseModel):
     expected_consumption_l_per_100km: float = Field(gt=0)
     tank_capacity_l: float = Field(gt=0)
     default_driver_id: int | None = None
+    use_custom_customer_catalog: bool = False
 
 
 class VehicleUpdate(VehicleCreate):
@@ -47,6 +48,7 @@ class CustomerCreate(BaseModel):
     address: str = Field(min_length=3, max_length=256)
     distance_from_base_km: float = Field(gt=0)
     active_for_generation: bool = True
+    vehicle_id: int | None = None
 
 
 class CustomerUpdate(CustomerCreate):
@@ -151,3 +153,18 @@ class AppSettingsUpdate(BaseModel):
 
 class BulkDeleteRequest(BaseModel):
     ids: list[int] = Field(min_length=1)
+
+
+class BulkCustomerGenerationUpdate(BaseModel):
+    ids: list[int] = Field(min_length=1)
+    active_for_generation: bool
+
+
+class HolidayCreate(BaseModel):
+    holiday_date: date
+    name: str = Field(min_length=1, max_length=128)
+
+    @field_validator("holiday_date", mode="before")
+    @classmethod
+    def parse_holiday_date(cls, value: Any) -> Any:
+        return _parse_date_sk(value)

@@ -163,7 +163,7 @@
         <div class="grid">
           <div class="card">
             <h2>Ručná jazda</h2>
-            <label>Mesačný plán</label><select id="t_mid"></select>
+            <label>Mesačný plán</label><select id="t_mid" onchange="syncSelectors()"></select>
             <label>Zákazník (voliteľne)</label><select id="t_customer" onchange="onTripCustomerChange()"></select>
             <div class="row">
               <div><label>Dátum</label><input id="t_date" placeholder="dd.mm.rrrr" /></div>
@@ -283,6 +283,7 @@
             <label>Spotreba (l / 100km)</label><input id="v_cons" type="number" step="0.1" />
             <label>Objem nádrže (l)</label><input id="v_tank" type="number" step="0.1" value="50" />
             <label>Hlavný vodič (voliteľne)</label><select id="v_default_driver"></select>
+            <label><input id="v_custom_catalog" type="checkbox" style="width:auto;" /> Použiť vlastný číselník zákazníkov pre toto auto</label>
             <button onclick="createVehicle()">Uložiť auto</button>
           </div>
           <div class="card">
@@ -320,6 +321,7 @@
         <div class="grid">
           <div class="card">
             <h2>Nový zákazník</h2>
+            <label>Číselník</label><select id="customer_catalog_vehicle"></select>
             <label>Názov</label><input id="c_name" />
             <label>Adresa</label><input id="c_addr" />
             <div class="row">
@@ -332,6 +334,7 @@
           <div class="card">
             <h2>Zoznam zákazníkov</h2>
             <div class="toolbar">
+              <select id="customer_filter_vehicle"></select>
               <select id="customer_sort_by">
                 <option value="name">Podľa mena</option>
                 <option value="distance">Podľa vzdialenosti</option>
@@ -345,6 +348,8 @@
             </div>
             <button onclick="loadCustomers()">Obnoviť</button>
             <button onclick="bulkDeleteCustomers()">Zmazať vybrané</button>
+            <button onclick="bulkSetCustomersGeneration(true)">Označiť vybrané pre generovanie</button>
+            <button onclick="bulkSetCustomersGeneration(false)">Vyradiť vybrané z generovania</button>
             <div class="table-wrap"><table id="customers_table"></table></div>
           </div>
         </div>
@@ -373,6 +378,19 @@
             <button onclick="importCustomersCsv()">Importovať CSV</button>
           </div>
           <div class="card">
+            <h2>Dni pracovného voľna</h2>
+            <div class="toolbar">
+              <input id="holiday_year" type="number" placeholder="Rok" value="2026" />
+              <button onclick="loadHolidays()">Načítať sviatky</button>
+            </div>
+            <div class="row">
+              <div><label>Dátum</label><input id="holiday_date" placeholder="dd.mm.rrrr" /></div>
+              <div><label>Názov</label><input id="holiday_name" /></div>
+            </div>
+            <button onclick="createHoliday()">Pridať deň voľna</button>
+            <div class="table-wrap"><table id="holidays_table"></table></div>
+          </div>
+          <div class="card">
             <h2>Záloha a obnova</h2>
             <p class="muted">Vyber, ktoré sekcie chceš exportovať alebo obnoviť.</p>
             <div class="toolbar" id="backup_sections_export">
@@ -383,6 +401,7 @@
               <label><input type="checkbox" value="month_plans" checked style="width:auto;" /> Plány</label>
               <label><input type="checkbox" value="trips" checked style="width:auto;" /> Jazdy</label>
               <label><input type="checkbox" value="refuels" checked style="width:auto;" /> Tankovania</label>
+              <label><input type="checkbox" value="holidays" checked style="width:auto;" /> Sviatky</label>
             </div>
             <button onclick="downloadBackupJson()">Exportovať vybrané sekcie (JSON)</button>
             <input id="backup_import_file" type="file" accept=".json" />
@@ -394,6 +413,7 @@
               <label><input type="checkbox" value="month_plans" checked style="width:auto;" /> Plány</label>
               <label><input type="checkbox" value="trips" checked style="width:auto;" /> Jazdy</label>
               <label><input type="checkbox" value="refuels" checked style="width:auto;" /> Tankovania</label>
+              <label><input type="checkbox" value="holidays" checked style="width:auto;" /> Sviatky</label>
             </div>
             <label><input id="backup_replace" type="checkbox" style="width:auto;" checked /> Úplná obnova vybraných sekcií</label>
             <p class="muted" id="backup_restore_hint">Ak je zapnuté pri všetkých sekciách, databáza sa obnoví presne zo zálohy. Pri čiastočnom importe sa vybrané sekcie bezpečne zlúčia a aktualizujú.</p>
@@ -429,9 +449,11 @@
       let vehiclesCache = [];
       let driversCache = [];
       let customersCache = [];
+      let allCustomersCache = [];
       let plansCache = [];
       let tripsCache = [];
       let refuelsCache = [];
+      let holidaysCache = [];
       let settingsCache = null;
       let metaCache = null;
       const allTripColumns = ["id", "month_name", "trip_date", "trip_end_date", "customer_name", "is_private", "start_address", "end_address", "distance_km", "generated", "note"];
@@ -465,6 +487,19 @@
       tripColumnOrder = tripColumnOrder.filter(c => allTripColumns.includes(c));
       allTripColumns.forEach(c => { if (!tripColumnOrder.includes(c)) tripColumnOrder.push(c); });
       hiddenTripColumns = new Set(Array.from(hiddenTripColumns).filter(c => allTripColumns.includes(c)));
+
+      function selectedCustomerCatalogVehicleId() {
+        const raw = customer_filter_vehicle.value || customer_catalog_vehicle.value || "";
+        return raw ? Number(raw) : null;
+      }
+
+      function customersForVehicle(vehicleId) {
+        const vehicle = vehiclesCache.find(v => v.id === Number(vehicleId || 0));
+        if (vehicle && vehicle.use_custom_customer_catalog) {
+          return allCustomersCache.filter(c => c.vehicle_id === vehicle.id);
+        }
+        return allCustomersCache.filter(c => c.vehicle_id === null);
+      }
 
       function openTab(tabName) {
         document.querySelectorAll(".tab-panel").forEach(el => el.classList.remove("active"));
@@ -512,7 +547,7 @@
         if (data.imported) {
           const sections = Array.isArray(data.sections) ? data.sections.join(", ") : "všetky sekcie";
           const modeLabel = data.mode === "replace_all" ? "Úplná obnova" : data.mode === "replace_selected" ? "Obnova vybraných sekcií" : "Doplnenie/aktualizácia";
-          return `${modeLabel}: sekcie ${sections}. Autá ${data.vehicles}, vodiči ${data.drivers}, zákazníci ${data.customers}, plány ${data.month_plans}, jazdy ${data.trips}, tankovania ${data.refuels}.`;
+          return `${modeLabel}: sekcie ${sections}. Autá ${data.vehicles}, vodiči ${data.drivers}, zákazníci ${data.customers}, plány ${data.month_plans}, jazdy ${data.trips}, tankovania ${data.refuels}, sviatky ${data.holidays ?? 0}.`;
         }
         if (data.generated_trips !== undefined && data.generated_km !== undefined) {
           return `Generovanie hotové: ${data.generated_trips} jázd, ${data.generated_km} služobných km.`
@@ -712,11 +747,16 @@
         fillSelect("r_vehicle", vehiclesCache, v => `${v.plate_number} | ${v.model}`);
         fillSelect("plan_filter_vehicle", vehiclesCache, v => `${v.plate_number} | ${v.model}`);
         fillSelect("trip_filter_vehicle", vehiclesCache, v => `${v.plate_number} | ${v.model}`);
+        const customCatalogVehicles = vehiclesCache.filter(v => v.use_custom_customer_catalog);
+        fillSelect("customer_catalog_vehicle", customCatalogVehicles, v => `${v.plate_number} | vlastný číselník`, "id", true);
+        fillSelect("customer_filter_vehicle", customCatalogVehicles, v => `${v.plate_number} | vlastný číselník`, "id", true);
         fillSelect("m_did", driversCache, d => `${d.full_name} | ${d.license_number}`);
         fillSelect("v_default_driver", driversCache, d => `${d.full_name} | ${d.license_number}`);
         fillSelect("plan_filter_driver", driversCache, d => `${d.full_name} | ${d.license_number}`);
         fillSelect("trip_filter_driver", driversCache, d => `${d.full_name} | ${d.license_number}`);
-        fillSelect("t_customer", customersCache, c => `${c.name} (${c.distance_from_base_km} km)`, "id", true);
+        const selectedPlan = plansCache.find(p => p.id === Number(t_mid.value || x_mid.value || 0));
+        const tripCustomers = customersForVehicle(selectedPlan ? selectedPlan.vehicle_id : null);
+        fillSelect("t_customer", tripCustomers, c => `${c.name} (${c.distance_from_base_km} km)`, "id", true);
         const formatPlan = p => `${p.month_name} ${p.year} | ${p.vehicle_plate_number} | ${p.driver_name}`;
         ["t_mid", "x_mid", "list_mid_refuels"].forEach(id => fillSelect(id, plansCache, formatPlan));
         fillSelect("trip_filter_plan", plansCache, formatPlan, "id", true);
@@ -726,6 +766,8 @@
         if (plan_filter_driver.options.length) plan_filter_driver.options[0].textContent = "Všetci vodiči";
         if (trip_filter_vehicle.options.length) trip_filter_vehicle.options[0].textContent = "Všetky autá";
         if (trip_filter_driver.options.length) trip_filter_driver.options[0].textContent = "Všetci vodiči";
+        if (customer_catalog_vehicle.options.length) customer_catalog_vehicle.options[0].textContent = "Globálny číselník";
+        if (customer_filter_vehicle.options.length) customer_filter_vehicle.options[0].textContent = "Globálny číselník";
         syncGenerateOptionsFromPlan();
         applyDefaultDriverForSelectedVehicle();
       }
@@ -831,7 +873,7 @@
         if (!fileInput.files || !fileInput.files.length) { show("Vyber JSON zálohu."); return; }
         const sections = getSelectedBackupSections("backup_sections_import");
         if (!sections.length) { show("Vyber aspoň jednu sekciu na import."); return; }
-        const isFull = backup_replace.checked && sections.length === 7;
+        const isFull = backup_replace.checked && sections.length === 8;
         const message = isFull
           ? "Prebehne úplná obnova všetkých sekcií zo zálohy. Aktuálne dáta budú nahradené. Pokračovať?"
           : backup_replace.checked
@@ -847,7 +889,7 @@
           const payload = await res.json();
           if (!res.ok) throw new Error(payload.detail ? `Chyba ${res.status}: ${payload.detail}` : JSON.stringify(payload));
           show(payload);
-          await Promise.all([loadSettings(), loadVehicles(), loadDrivers(), loadCustomers(), loadMonthPlans(), loadVehicleConsumptionSummary()]);
+          await Promise.all([loadSettings(), loadVehicles(), loadDrivers(), loadCustomers(), loadMonthPlans(), loadVehicleConsumptionSummary(), loadHolidays()]);
           await loadTripsFiltered();
           await loadRefuelsByMonth().catch(() => {});
         } catch (e) { show(e.message); }
@@ -902,7 +944,7 @@
       });
 
       function onTripCustomerChange() {
-        const customer = customersCache.find(c => c.id === Number(t_customer.value));
+        const customer = allCustomersCache.find(c => c.id === Number(t_customer.value));
         if (!customer) return;
         t_end.value = customer.address;
         if (!t_dist.value) t_dist.value = Number(customer.distance_from_base_km * 2).toFixed(1);
@@ -911,7 +953,7 @@
       async function loadVehicles() {
         vehiclesCache = await callApi("/vehicles");
         render("vehicles_table", tableHtml(
-          ["id", "plate_number", "model", "default_driver_name", "expected_consumption_l_per_100km", "tank_capacity_l"],
+          ["id", "plate_number", "model", "default_driver_name", "use_custom_customer_catalog", "expected_consumption_l_per_100km", "tank_capacity_l"],
           vehiclesCache,
           r => `<button class='btn-small' onclick='editVehicle(${r.id})'>Upraviť</button><button class='btn-small btn-danger' onclick='deleteVehicle(${r.id})'>Zmazať</button>`,
           "vehicles"
@@ -931,12 +973,24 @@
       async function loadCustomers() {
         const sortBy = customer_sort_by.value || "name";
         const sortDir = customer_sort_dir.value || "asc";
-        customersCache = await callApi(`/customers?sort_by=${encodeURIComponent(sortBy)}&sort_dir=${encodeURIComponent(sortDir)}`);
-        render("customers_table", tableHtml(["id", "name", "address", "distance_from_base_km", "active_for_generation", "created_at", "updated_at"], customersCache,
+        const vehiclePart = customer_filter_vehicle.value ? `&vehicle_id=${encodeURIComponent(customer_filter_vehicle.value)}` : "";
+        customersCache = await callApi(`/customers?sort_by=${encodeURIComponent(sortBy)}&sort_dir=${encodeURIComponent(sortDir)}${vehiclePart}`);
+        allCustomersCache = await callApi("/customers?all_catalogs=true");
+        render("customers_table", tableHtml(["id", "name", "address", "distance_from_base_km", "active_for_generation", "catalog_name", "created_at", "updated_at"], customersCache,
           r => `<button class='btn-small' onclick='editCustomer(${r.id})'>Upraviť</button><button class='btn-small btn-danger' onclick='deleteCustomer(${r.id})'>Zmazať</button>`,
           "customers"
         ));
         syncSelectors();
+      }
+
+      async function loadHolidays() {
+        const year = holiday_year.value ? Number(holiday_year.value) : new Date().getFullYear();
+        holidaysCache = await callApi(`/holidays?year=${encodeURIComponent(year)}`);
+        render("holidays_table", tableHtml(
+          ["id", "holiday_date", "name"],
+          holidaysCache,
+          r => `<button class='btn-small btn-danger' onclick='deleteHoliday(${r.id})'>Zmazať</button>`
+        ));
       }
 
       async function loadVehicleConsumptionSummary() {
@@ -1008,10 +1062,12 @@
             expected_consumption_l_per_100km: Number(v_cons.value),
             tank_capacity_l: Number(v_tank.value),
             default_driver_id: v_default_driver.value ? Number(v_default_driver.value) : null,
+            use_custom_customer_catalog: Boolean(v_custom_catalog.checked),
           });
           show(result);
           flashSaved("Auto bolo uložené.");
           await loadVehicles();
+          await loadCustomers();
         } catch (e) { show(e.message); }
       }
 
@@ -1031,10 +1087,29 @@
             address: c_addr.value,
             distance_from_base_km: Number(c_dist.value),
             active_for_generation: Boolean(c_active_gen.checked),
+            vehicle_id: customer_catalog_vehicle.value ? Number(customer_catalog_vehicle.value) : null,
           });
           show(result);
           flashSaved("Zákazník bol uložený.");
           await loadCustomers();
+        } catch (e) { show(e.message); }
+      }
+
+      async function bulkSetCustomersGeneration(active) {
+        const ids = Array.from(selectedIds.customers);
+        if (!ids.length) { show("Vyber aspoň jedného zákazníka."); return; }
+        try {
+          show(await callApi("/customers/bulk-generation", "POST", { ids, active_for_generation: active }));
+          await loadCustomers();
+        } catch (e) { show(e.message); }
+      }
+
+      async function createHoliday() {
+        try {
+          const holidayDate = normalizeDateForApi(holiday_date.value);
+          if (!holidayDate) { show("Zadaj dátum vo formáte dd.mm.rrrr."); return; }
+          show(await callApi("/holidays", "POST", { holiday_date: holidayDate, name: holiday_name.value }));
+          await loadHolidays();
         } catch (e) { show(e.message); }
       }
 
@@ -1118,6 +1193,7 @@
             <option value="">-- bez predvoleného vodiča --</option>
             ${driversCache.map(d => `<option value="${d.id}" ${d.id === row.default_driver_id ? "selected" : ""}>${escapeAttr(d.full_name)} | ${escapeAttr(d.license_number)}</option>`).join("")}
           </select>
+          <label class="inline-check"><input id="edit_vehicle_catalog" type="checkbox" style="width:auto;" ${row.use_custom_customer_catalog ? "checked" : ""} /> Použiť vlastný číselník zákazníkov pre toto auto</label>
         `, async () => {
           try {
             show(await callApi(`/vehicles/${id}`, "PUT", {
@@ -1126,9 +1202,11 @@
               expected_consumption_l_per_100km: Number(document.getElementById("edit_consumption").value),
               tank_capacity_l: Number(document.getElementById("edit_tank_capacity").value),
               default_driver_id: document.getElementById("edit_default_driver").value ? Number(document.getElementById("edit_default_driver").value) : null,
+              use_custom_customer_catalog: Boolean(document.getElementById("edit_vehicle_catalog").checked),
             }));
             closeFormModal();
             await loadVehicles();
+            await loadCustomers();
             await loadMonthPlans();
           } catch (e) { show(e.message); }
         });
@@ -1179,6 +1257,11 @@
       async function editCustomer(id) {
         const row = customersCache.find(r => r.id === id);
         openFormModal("Upraviť zákazníka", `
+          <label>Číselník</label>
+          <select id="edit_customer_vehicle">
+            <option value="">Globálny číselník</option>
+            ${vehiclesCache.filter(v => v.use_custom_customer_catalog).map(v => `<option value="${v.id}" ${v.id === row.vehicle_id ? "selected" : ""}>${escapeAttr(v.plate_number)} | vlastný číselník</option>`).join("")}
+          </select>
           <label>Názov</label><input id="edit_customer_name" value="${escapeAttr(row.name)}" />
           <label>Adresa</label><input id="edit_customer_address" value="${escapeAttr(row.address)}" />
           <label>Vzdialenosť od základne (km)</label><input id="edit_customer_distance" type="number" step="0.1" value="${escapeAttr(row.distance_from_base_km)}" />
@@ -1186,6 +1269,7 @@
         `, async () => {
           try {
             show(await callApi(`/customers/${id}`, "PUT", {
+              vehicle_id: document.getElementById("edit_customer_vehicle").value ? Number(document.getElementById("edit_customer_vehicle").value) : null,
               name: document.getElementById("edit_customer_name").value,
               address: document.getElementById("edit_customer_address").value,
               distance_from_base_km: Number(document.getElementById("edit_customer_distance").value),
@@ -1261,11 +1345,13 @@
 
       async function editTrip(id) {
         const row = tripsCache.find(r => r.id === id);
+        const rowPlan = plansCache.find(p => p.id === row.month_plan_id);
+        const tripCustomers = customersForVehicle(rowPlan ? rowPlan.vehicle_id : null);
         openFormModal("Upraviť jazdu", `
           <label>Mesačný plán</label>
           <select id="edit_trip_plan">${plansCache.map(p => `<option value="${p.id}" ${p.id === row.month_plan_id ? "selected" : ""}>${escapeAttr(p.month_name)} ${escapeAttr(p.year)} | ${escapeAttr(p.vehicle_plate_number)} | ${escapeAttr(p.driver_name)}</option>`).join("")}</select>
           <label>Zákazník</label>
-          <select id="edit_trip_customer"><option value="">-- bez zákazníka --</option>${customersCache.map(c => `<option value="${c.id}" ${c.id === row.customer_id ? "selected" : ""}>${escapeAttr(c.name)} (${escapeAttr(c.distance_from_base_km)} km)</option>`).join("")}</select>
+          <select id="edit_trip_customer"><option value="">-- bez zákazníka --</option>${tripCustomers.map(c => `<option value="${c.id}" ${c.id === row.customer_id ? "selected" : ""}>${escapeAttr(c.name)} (${escapeAttr(c.distance_from_base_km)} km)</option>`).join("")}</select>
           <div class="row">
             <div><label>Dátum</label><input id="edit_trip_date" value="${escapeAttr(formatDateSk(row.trip_date))}" /></div>
             <div><label>Dátum do</label><input id="edit_trip_date_to" value="${escapeAttr(formatDateSk(row.trip_end_date || ""))}" /></div>
@@ -1401,13 +1487,18 @@
         window.open(`/month-plans/${id}/report.csv`, "_blank");
       }
 
+      async function deleteHoliday(id) {
+        if (!confirm(`Zmazať deň voľna #${id}?`)) return;
+        try { show(await callApi(`/holidays/${id}`, "DELETE")); await loadHolidays(); } catch (e) { show(e.message); }
+      }
+
       async function bootstrap() {
         try {
           initTheme();
           refreshTripColumnSelector();
           await loadMeta();
           await loadSettings();
-          await Promise.all([loadVehicles(), loadDrivers(), loadCustomers(), loadMonthPlans(), loadVehicleConsumptionSummary()]);
+          await Promise.all([loadVehicles(), loadDrivers(), loadCustomers(), loadMonthPlans(), loadVehicleConsumptionSummary(), loadHolidays()]);
           await loadTripsFiltered();
         } catch (e) {
           show(e.message);

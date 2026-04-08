@@ -169,6 +169,10 @@ V zozname `Zákazníci` môžeš triediť podľa:
 - dátumu vytvorenia
 - dátumu poslednej úpravy
 
+Pri zákazníkoch môžeš tiež:
+- prepínať medzi globálnym číselníkom a vlastným číselníkom konkrétneho auta
+- hromadne označiť alebo vyradiť vybraných zákazníkov pre generovanie jázd
+
 ## 10. Editácia Záznamov
 
 Každý záznam je možné upraviť tlačidlom `Upraviť`.
@@ -188,6 +192,7 @@ Editácia sa otvára ako plný formulár, kde vidíš všetky polia naraz. To pl
 V záložke `Nastavenia` je sekcia:
 - export zálohy do JSON
 - import zálohy z JSON
+- správa sviatkov a dní pracovného voľna
 
 Odporúčaný postup:
 1. pred aktualizáciou spraviť export zálohy
