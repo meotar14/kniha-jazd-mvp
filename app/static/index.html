@@ -254,7 +254,7 @@
             <label>Základná adresa</label><input id="m_base" oninput="markMonthPlanBaseTouched()" />
             <div class="row">
               <div><label>Počiatočné km</label><input id="m_start" type="number" oninput="markMonthPlanStartTouched()" /></div>
-              <div><label>Koncové km</label><input id="m_end" type="number" /></div>
+              <div><label>Koncové km (voliteľné počas mesiaca)</label><input id="m_end" type="number" /></div>
             </div>
             <label class="inline-check"><input id="m_private_enabled" type="checkbox" style="width:auto;" /> Zohľadniť 10 % súkromných km mimo evidencie jázd</label>
             <button onclick="createMonthPlan()">Uložiť plán</button>
@@ -1186,7 +1186,7 @@
           monthPlanStartTouched = false;
           monthPlanBaseTouched = false;
           const startOdometerKm = parseIntegerField(m_start.value, "Počiatočné km", { required: false });
-          const endOdometerKm = parseIntegerField(m_end.value, "Koncové km");
+          const endOdometerKm = parseIntegerField(m_end.value, "Koncové km", { required: false });
           const result = await callApi("/month-plans", "POST", {
             vehicle_id: Number(m_vid.value),
             driver_id: Number(m_did.value),
@@ -1380,13 +1380,13 @@
           <label>Základná adresa</label><input id="edit_plan_base" value="${escapeAttr(row.base_address)}" />
           <div class="row">
             <div><label>Počiatočné km</label><input id="edit_plan_start" type="number" value="${escapeAttr(row.start_odometer_km)}" /></div>
-            <div><label>Koncové km</label><input id="edit_plan_end" type="number" value="${escapeAttr(row.end_odometer_km)}" /></div>
+            <div><label>Koncové km (voliteľné počas mesiaca)</label><input id="edit_plan_end" type="number" value="${escapeAttr(row.end_odometer_km)}" /></div>
           </div>
           <label class="inline-check"><input id="edit_plan_private" type="checkbox" style="width:auto;" ${row.private_km_enabled ? "checked" : ""} /> Zohľadniť 10 % súkromných km mimo evidencie jázd</label>
         `, async () => {
           try {
             const startOdometerKm = parseIntegerField(document.getElementById("edit_plan_start").value, "Počiatočné km", { required: false });
-            const endOdometerKm = parseIntegerField(document.getElementById("edit_plan_end").value, "Koncové km");
+            const endOdometerKm = parseIntegerField(document.getElementById("edit_plan_end").value, "Koncové km", { required: false });
             show(await callApi(`/month-plans/${id}`, "PUT", {
               vehicle_id: Number(document.getElementById("edit_plan_vehicle").value),
               driver_id: Number(document.getElementById("edit_plan_driver").value),

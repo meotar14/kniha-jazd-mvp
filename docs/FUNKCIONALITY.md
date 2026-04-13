@@ -22,6 +22,7 @@ Tento dokument popisuje hlavné moduly aplikácie `kniha-jazd-mvp`, rozdiely med
 ### Mesačné Plány
 - mesačný plán pre konkrétne auto a vodiča
 - obsahuje mesiac, rok, základnú adresu a stav km na začiatku a konci obdobia
+- ak ešte nie je známy koncový stav km, plán sa dá uložiť aj priebežne; koncový stav sa dočasne nastaví na počiatočný a neskôr sa upraví
 - tvorí hlavnú jednotku pre jazdy, tankovania, reporty a exporty
 - pri výbere auta sa vie automaticky predvyplniť jeho hlavný vodič
 - pri novom pláne sa vie predvyplniť počiatočný stav km z predchádzajúceho mesiaca rovnakého auta

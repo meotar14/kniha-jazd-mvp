@@ -1519,10 +1519,11 @@ def create_month_plan(payload: schemas.MonthPlanCreate, db: Session = Depends(ge
         payload.month,
         payload.start_odometer_km,
     )
-    if payload.end_odometer_km < start_odometer_km:
+    end_odometer_km = resolve_month_plan_end_odometer(payload.end_odometer_km, start_odometer_km)
+    if end_odometer_km < start_odometer_km:
         raise HTTPException(status_code=400, detail="end_odometer_km must be >= start_odometer_km")
 
-    month_plan = models.MonthPlan(**(payload.model_dump() | {"start_odometer_km": start_odometer_km}))
+    month_plan = models.MonthPlan(**(payload.model_dump() | {"start_odometer_km": start_odometer_km, "end_odometer_km": end_odometer_km}))
     db.add(month_plan)
     db.commit()
     db.refresh(month_plan)
@@ -1559,6 +1560,10 @@ def resolve_month_plan_start_odometer(
             detail="start_odometer_km is required when no previous month plan exists for this vehicle",
         )
     return previous_plan.end_odometer_km
+
+
+def resolve_month_plan_end_odometer(end_odometer_km: int | None, start_odometer_km: int) -> int:
+    return start_odometer_km if end_odometer_km is None else end_odometer_km
 
 
 @app.get("/month-plans")
@@ -1603,10 +1608,11 @@ def update_month_plan(month_plan_id: int, payload: schemas.MonthPlanUpdate, db: 
         payload.month,
         payload.start_odometer_km,
     )
-    if payload.end_odometer_km < start_odometer_km:
+    end_odometer_km = resolve_month_plan_end_odometer(payload.end_odometer_km, start_odometer_km)
+    if end_odometer_km < start_odometer_km:
         raise HTTPException(status_code=400, detail="end_odometer_km must be >= start_odometer_km")
 
-    for key, value in (payload.model_dump() | {"start_odometer_km": start_odometer_km}).items():
+    for key, value in (payload.model_dump() | {"start_odometer_km": start_odometer_km, "end_odometer_km": end_odometer_km}).items():
         setattr(month_plan, key, value)
     try:
         db.commit()

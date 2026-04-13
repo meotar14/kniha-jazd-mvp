@@ -53,7 +53,10 @@ V záložke `Plány` vytvor mesačný plán:
 - vodič
 - rok a mesiac
 - základná adresa
-- počiatočný a koncový stav km
+- počiatočný stav km
+- koncový stav km, ak ho už poznáš
+
+Ak koncový stav km ešte nevieš, môžeš plán uložiť aj bez neho. Systém ho dočasne nastaví rovnako ako počiatočný stav a neskôr ho pri ukončení mesiaca upravíš.
 
 Voliteľne môžeš zapnúť:
 - `Zohľadniť 10 % súkromných km mimo evidencie jázd`
