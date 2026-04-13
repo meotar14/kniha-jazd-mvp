@@ -609,10 +609,12 @@
           if (required) throw new Error(`${fieldLabel} je povinné pole.`);
           return null;
         }
-        if (!/^-?\\d+$/.test(value)) {
+        const normalized = value.replace(/\s+/g, "").replace(",", ".");
+        const parsed = Number(normalized);
+        if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
           throw new Error(`${fieldLabel} musí byť celé číslo.`);
         }
-        return Number(value);
+        return parsed;
       }
 
       function formatGeneratedPill(value) {
