@@ -1507,19 +1507,58 @@ async def import_customers_csv(
 
 @app.post("/month-plans")
 def create_month_plan(payload: schemas.MonthPlanCreate, db: Session = Depends(get_db)) -> dict:
-    if payload.end_odometer_km < payload.start_odometer_km:
-        raise HTTPException(status_code=400, detail="end_odometer_km must be >= start_odometer_km")
-
     vehicle = db.get(models.Vehicle, payload.vehicle_id)
     driver = db.get(models.Driver, payload.driver_id)
     if not vehicle or not driver:
         raise HTTPException(status_code=404, detail="vehicle or driver not found")
 
-    month_plan = models.MonthPlan(**payload.model_dump())
+    start_odometer_km = resolve_month_plan_start_odometer(
+        db,
+        payload.vehicle_id,
+        payload.year,
+        payload.month,
+        payload.start_odometer_km,
+    )
+    if payload.end_odometer_km < start_odometer_km:
+        raise HTTPException(status_code=400, detail="end_odometer_km must be >= start_odometer_km")
+
+    month_plan = models.MonthPlan(**(payload.model_dump() | {"start_odometer_km": start_odometer_km}))
     db.add(month_plan)
     db.commit()
     db.refresh(month_plan)
     return {"id": month_plan.id, "year": month_plan.year, "month": month_plan.month}
+
+
+def find_previous_month_plan(db: Session, vehicle_id: int, year: int, month: int) -> models.MonthPlan | None:
+    previous_year = year - 1 if month == 1 else year
+    previous_month = 12 if month == 1 else month - 1
+    return (
+        db.query(models.MonthPlan)
+        .filter(
+            models.MonthPlan.vehicle_id == vehicle_id,
+            models.MonthPlan.year == previous_year,
+            models.MonthPlan.month == previous_month,
+        )
+        .first()
+    )
+
+
+def resolve_month_plan_start_odometer(
+    db: Session,
+    vehicle_id: int,
+    year: int,
+    month: int,
+    start_odometer_km: int | None,
+) -> int:
+    if start_odometer_km is not None:
+        return start_odometer_km
+    previous_plan = find_previous_month_plan(db, vehicle_id, year, month)
+    if not previous_plan or previous_plan.end_odometer_km is None:
+        raise HTTPException(
+            status_code=400,
+            detail="start_odometer_km is required when no previous month plan exists for this vehicle",
+        )
+    return previous_plan.end_odometer_km
 
 
 @app.get("/month-plans")
@@ -1552,14 +1591,22 @@ def update_month_plan(month_plan_id: int, payload: schemas.MonthPlanUpdate, db: 
     month_plan = db.get(models.MonthPlan, month_plan_id)
     if not month_plan:
         raise HTTPException(status_code=404, detail="month plan not found")
-    if payload.end_odometer_km < payload.start_odometer_km:
-        raise HTTPException(status_code=400, detail="end_odometer_km must be >= start_odometer_km")
     if not db.get(models.Vehicle, payload.vehicle_id):
         raise HTTPException(status_code=404, detail="vehicle not found")
     if not db.get(models.Driver, payload.driver_id):
         raise HTTPException(status_code=404, detail="driver not found")
 
-    for key, value in payload.model_dump().items():
+    start_odometer_km = resolve_month_plan_start_odometer(
+        db,
+        payload.vehicle_id,
+        payload.year,
+        payload.month,
+        payload.start_odometer_km,
+    )
+    if payload.end_odometer_km < start_odometer_km:
+        raise HTTPException(status_code=400, detail="end_odometer_km must be >= start_odometer_km")
+
+    for key, value in (payload.model_dump() | {"start_odometer_km": start_odometer_km}).items():
         setattr(month_plan, key, value)
     try:
         db.commit()

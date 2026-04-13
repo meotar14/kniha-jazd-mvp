@@ -29,6 +29,10 @@ Vyplň:
 
 Ak nastavíš hlavnému autu vodiča, pri vytváraní nového mesačného plánu sa tento vodič predvyplní automaticky.
 
+Pri novom mesačnom pláne sa zároveň vie predvyplniť:
+- počiatočný stav km z koncového stavu predchádzajúceho mesiaca pre rovnaké auto
+- základná adresa z predchádzajúceho plánu pre rovnaké auto a vodiča
+
 ### Vodič
 Vyplň:
 - meno

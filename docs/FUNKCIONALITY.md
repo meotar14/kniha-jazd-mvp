@@ -24,6 +24,9 @@ Tento dokument popisuje hlavné moduly aplikácie `kniha-jazd-mvp`, rozdiely med
 - obsahuje mesiac, rok, základnú adresu a stav km na začiatku a konci obdobia
 - tvorí hlavnú jednotku pre jazdy, tankovania, reporty a exporty
 - pri výbere auta sa vie automaticky predvyplniť jeho hlavný vodič
+- pri novom pláne sa vie predvyplniť počiatočný stav km z predchádzajúceho mesiaca rovnakého auta
+- základná adresa sa vie zdediť z predchádzajúceho plánu rovnakého auta a vodiča
+- ak je `start_odometer_km` prázdne, backend ho vie dopočítať server-side z predchádzajúceho plánu
 
 ### Jazdy
 - ručne zadané alebo automaticky generované jazdy

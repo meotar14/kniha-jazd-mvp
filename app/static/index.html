@@ -245,15 +245,15 @@
         <div class="grid">
           <div class="card">
             <h2>Nový mesačný plán</h2>
-            <label>Vozidlo</label><select id="m_vid" onchange="applyDefaultDriverForSelectedVehicle()"></select>
-            <label>Vodič</label><select id="m_did"></select>
+            <label>Vozidlo</label><select id="m_vid" onchange="handleMonthPlanVehicleChange()"></select>
+            <label>Vodič</label><select id="m_did" onchange="applyPreviousMonthPlanBaseAddress()"></select>
             <div class="row">
-              <div><label>Rok</label><input id="m_year" type="number" value="2026" /></div>
-              <div><label>Mesiac</label><input id="m_month" type="number" value="3" /></div>
+              <div><label>Rok</label><input id="m_year" type="number" value="2026" onchange="applyPreviousMonthPlanStartOdometer()" oninput="applyPreviousMonthPlanStartOdometer()" /></div>
+              <div><label>Mesiac</label><input id="m_month" type="number" value="3" onchange="applyPreviousMonthPlanStartOdometer()" oninput="applyPreviousMonthPlanStartOdometer()" /></div>
             </div>
-            <label>Základná adresa</label><input id="m_base" />
+            <label>Základná adresa</label><input id="m_base" oninput="markMonthPlanBaseTouched()" />
             <div class="row">
-              <div><label>Počiatočné km</label><input id="m_start" type="number" /></div>
+              <div><label>Počiatočné km</label><input id="m_start" type="number" oninput="markMonthPlanStartTouched()" /></div>
               <div><label>Koncové km</label><input id="m_end" type="number" /></div>
             </div>
             <label class="inline-check"><input id="m_private_enabled" type="checkbox" style="width:auto;" /> Zohľadniť 10 % súkromných km mimo evidencie jázd</label>
@@ -454,6 +454,8 @@
       let tripsCache = [];
       let refuelsCache = [];
       let holidaysCache = [];
+      let monthPlanStartTouched = false;
+      let monthPlanBaseTouched = false;
       let settingsCache = null;
       let metaCache = null;
       const allTripColumns = ["id", "month_name", "trip_date", "trip_end_date", "customer_name", "is_private", "start_address", "end_address", "distance_km", "generated", "note"];
@@ -769,7 +771,21 @@
         if (customer_catalog_vehicle.options.length) customer_catalog_vehicle.options[0].textContent = "Globálny číselník";
         if (customer_filter_vehicle.options.length) customer_filter_vehicle.options[0].textContent = "Globálny číselník";
         syncGenerateOptionsFromPlan();
+        handleMonthPlanVehicleChange();
+      }
+
+      function markMonthPlanStartTouched() {
+        monthPlanStartTouched = true;
+      }
+
+      function markMonthPlanBaseTouched() {
+        monthPlanBaseTouched = true;
+      }
+
+      function handleMonthPlanVehicleChange() {
         applyDefaultDriverForSelectedVehicle();
+        applyPreviousMonthPlanStartOdometer();
+        applyPreviousMonthPlanBaseAddress();
       }
 
       function applyDefaultDriverForSelectedVehicle() {
@@ -779,6 +795,43 @@
         } else {
           m_did.value = "";
         }
+      }
+
+      function previousMonthPeriod(year, month) {
+        if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return null;
+        return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+      }
+
+      function findPreviousMonthPlan() {
+        const vehicleId = Number(m_vid.value || 0);
+        const year = Number(m_year.value || 0);
+        const month = Number(m_month.value || 0);
+        const previous = previousMonthPeriod(year, month);
+        if (!vehicleId || !previous) return null;
+        return plansCache.find(plan =>
+          Number(plan.vehicle_id) === vehicleId
+          && Number(plan.year) === previous.year
+          && Number(plan.month) === previous.month
+        ) || null;
+      }
+
+      function applyPreviousMonthPlanStartOdometer(force = false) {
+        const previousPlan = findPreviousMonthPlan();
+        if (!previousPlan) return;
+        if (!force && monthPlanStartTouched && m_start.value !== "") return;
+        if (previousPlan.end_odometer_km === null || previousPlan.end_odometer_km === undefined) return;
+        m_start.value = String(previousPlan.end_odometer_km);
+        monthPlanStartTouched = false;
+      }
+
+      function applyPreviousMonthPlanBaseAddress(force = false) {
+        const previousPlan = findPreviousMonthPlan();
+        if (!previousPlan) return;
+        if (Number(m_did.value || 0) !== Number(previousPlan.driver_id || 0)) return;
+        if (!force && monthPlanBaseTouched && m_base.value.trim() !== "") return;
+        if (!previousPlan.base_address) return;
+        m_base.value = previousPlan.base_address;
+        monthPlanBaseTouched = false;
       }
 
       function syncGenerateOptionsFromPlan() {
@@ -1115,6 +1168,8 @@
 
       async function createMonthPlan() {
         try {
+          monthPlanStartTouched = false;
+          monthPlanBaseTouched = false;
           const result = await callApi("/month-plans", "POST", {
             vehicle_id: Number(m_vid.value),
             driver_id: Number(m_did.value),

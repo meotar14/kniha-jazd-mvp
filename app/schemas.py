@@ -61,10 +61,17 @@ class MonthPlanCreate(BaseModel):
     year: int = Field(ge=2020, le=2100)
     month: int = Field(ge=1, le=12)
     base_address: str = Field(min_length=3, max_length=256)
-    start_odometer_km: int = Field(ge=0)
+    start_odometer_km: int | None = Field(default=None, ge=0)
     end_odometer_km: int = Field(ge=0)
     private_km_enabled: bool = False
     private_km_ratio_percent: float = Field(default=10.0, ge=0, le=90)
+
+    @field_validator("start_odometer_km", mode="before")
+    @classmethod
+    def parse_start_odometer_km(cls, value: Any) -> Any:
+        if value in (None, ""):
+            return None
+        return value
 
 
 class MonthPlanUpdate(MonthPlanCreate):

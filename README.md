@@ -34,6 +34,9 @@ API beží na:
 - Evidencia objemu nádrže na vozidle + kontrola, aby tankovanie neprekročilo kapacitu nádrže
 - Pri tankovaní je možné vybrať vozidlo a dátum, plán sa priradí automaticky podľa mesiaca
 - Evidencia mesačného plánu (`start_odometer_km`, `end_odometer_km`)
+- Pri novom mesačnom pláne sa vie predvyplniť počiatočný stav km z koncového stavu predchádzajúceho mesiaca rovnakého auta
+- Základná adresa sa vie predvyplniť z predchádzajúceho plánu rovnakého auta a vodiča
+- Backend vie prázdny `start_odometer_km` dopočítať aj server-side z predchádzajúceho plánu, ak existuje
 - Evidencia tankovaní
 - Ručný zápis jázd
 - Automatické generovanie chýbajúcich jázd na dorovnanie celkových km (preferencia pracovných dní)
