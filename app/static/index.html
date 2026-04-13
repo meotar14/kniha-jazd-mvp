@@ -602,6 +602,19 @@
         return input;
       }
 
+      function parseIntegerField(input, fieldLabel, { required = true } = {}) {
+        const raw = typeof input === "string" ? input : String(input ?? "");
+        const value = raw.trim();
+        if (!value) {
+          if (required) throw new Error(`${fieldLabel} je povinné pole.`);
+          return null;
+        }
+        if (!/^-?\\d+$/.test(value)) {
+          throw new Error(`${fieldLabel} musí byť celé číslo.`);
+        }
+        return Number(value);
+      }
+
       function formatGeneratedPill(value) {
         const klass = value ? "generated" : "manual";
         const label = value ? "auto" : "manual";
@@ -1170,14 +1183,16 @@
         try {
           monthPlanStartTouched = false;
           monthPlanBaseTouched = false;
+          const startOdometerKm = parseIntegerField(m_start.value, "Počiatočné km", { required: false });
+          const endOdometerKm = parseIntegerField(m_end.value, "Koncové km");
           const result = await callApi("/month-plans", "POST", {
             vehicle_id: Number(m_vid.value),
             driver_id: Number(m_did.value),
             year: Number(m_year.value),
             month: Number(m_month.value),
             base_address: m_base.value,
-            start_odometer_km: Number(m_start.value),
-            end_odometer_km: Number(m_end.value),
+            start_odometer_km: startOdometerKm,
+            end_odometer_km: endOdometerKm,
             private_km_enabled: Boolean(m_private_enabled.checked),
             private_km_ratio_percent: 10.0,
           });
@@ -1368,14 +1383,16 @@
           <label class="inline-check"><input id="edit_plan_private" type="checkbox" style="width:auto;" ${row.private_km_enabled ? "checked" : ""} /> Zohľadniť 10 % súkromných km mimo evidencie jázd</label>
         `, async () => {
           try {
+            const startOdometerKm = parseIntegerField(document.getElementById("edit_plan_start").value, "Počiatočné km", { required: false });
+            const endOdometerKm = parseIntegerField(document.getElementById("edit_plan_end").value, "Koncové km");
             show(await callApi(`/month-plans/${id}`, "PUT", {
               vehicle_id: Number(document.getElementById("edit_plan_vehicle").value),
               driver_id: Number(document.getElementById("edit_plan_driver").value),
               year: Number(document.getElementById("edit_plan_year").value),
               month: Number(document.getElementById("edit_plan_month").value),
               base_address: document.getElementById("edit_plan_base").value,
-              start_odometer_km: Number(document.getElementById("edit_plan_start").value),
-              end_odometer_km: Number(document.getElementById("edit_plan_end").value),
+              start_odometer_km: startOdometerKm,
+              end_odometer_km: endOdometerKm,
               private_km_enabled: Boolean(document.getElementById("edit_plan_private").checked),
               private_km_ratio_percent: 10.0,
             }));
