@@ -41,6 +41,7 @@ def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[i
         and c.distance_from_base_km > 0
         and (c.address or "").strip().casefold() != base_normalized
     ]
+    customer_lookup = {c.id: c for c in eligible_customers}
     if remaining > 0 and not eligible_customers:
         return 0, 0.0
 
@@ -129,6 +130,7 @@ def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[i
                 month_plan_id=month_plan.id,
                 trip_date=trip_date,
                 customer_id=selected_customer.id,
+                customer=selected_customer,
                 start_address=month_plan.base_address,
                 end_address=selected_customer.address,
                 distance_km=round(trip_km, 1),
@@ -195,9 +197,10 @@ def generate_missing_trips(db: Session, month_plan: models.MonthPlan) -> tuple[i
         for trip in generated:
             if remaining <= 0:
                 break
-            if not trip.customer:
+            customer = trip.customer or customer_lookup.get(trip.customer_id)
+            if not customer:
                 continue
-            max_km = customer_max_km(trip.customer)
+            max_km = customer_max_km(customer)
             possible_add = round(max_km - trip.distance_km, 1)
             if possible_add <= 0:
                 continue
